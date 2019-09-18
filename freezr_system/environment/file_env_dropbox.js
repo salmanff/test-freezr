@@ -84,7 +84,7 @@ exports.sendAppFile = function(res, filePath, env_params) {
 		});
 	}
 }
-exports.requireFile(partialUrl, env_params, callback) {
+exports.requireFile = function(partialUrl, env_params, callback) {
 	callback(new Error("requireFile is not implemented in dropbox yet"))
 }
 
