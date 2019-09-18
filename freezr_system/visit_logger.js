@@ -256,7 +256,7 @@ function addRecordToDailySummary(req, prefs, options) {
 		  	day_db_log[today][user_type].numdbWrites++
 		  } else {day_db_log[today][user_type].numDbReads++}
 		} else { // parts[2] == permissions, account, developer...
-			if (parts[3] == "setobjectaccess" || parts[3] == "change" || parts[3] == "changePassword.json" || parts[3] == "upload_app_zipfile.json" ) {
+			if (parts[3] == "setobjectaccess" || ["change","changePassword.json","app_install_from_zipfile.json","app_install_from_url.json"].indexOf(parts[3])>-1 ) {
 				day_db_log[today][user_type].numAcctChges++
 			} else {day_db_log[today][user_type].numDbReads++}
 		}

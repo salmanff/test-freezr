@@ -3,7 +3,7 @@ const VERSION = "0.0.122";
 
 
 // INITALISATION / APP / EXPRESS
-console.log("=========================  VERSION August 2019  =======================")
+console.log("=========================  VERSION September 2019  =======================")
 const LISTEN_TO_LOCALHOST_ON_LOCAL = true; // for local development - set to true to access local site at http://localhost:3000, and false to access it at your local ip address - eg http://192.168.192.1:3000 (currently not working)
 
 
@@ -30,7 +30,8 @@ var  db_handler = require('./freezr_system/db_handler.js'),
     visit_logger = require('./freezr_system/visit_logger.js'),
     public_handler = require('./freezr_system/public_handler.js');
 
-// console var tester = require('./freezr_system/environment/db_env_gaeCloudDatastore.js');
+//console
+var tester = require('./freezr_system/environment/db_env_nedb.js');
 
 // var tester = require('./freezr_system/environment/db_env_nedb.js');
 
@@ -149,15 +150,15 @@ function uploadFile(req,res) {
         app_handler.putData(req,res);
     })
 }
-function uploadAppZipFile(req,res) {
+function installAppFromZipFile(req,res) {
     req.freezr_server_version = VERSION;
     req.freezr_environment = freezr_environment;
     // visit_logger already done via
     upload(req, res, function (err) {
         if (err) {
-            helpers.send_failure(res, err, "server.js", VERSION, "uploadAppZipFile");
+            helpers.send_failure(res, err, "server.js", VERSION, "installAppFromZipFile");
         }
-        account_handler.add_uploaded_app_zip_file(req,res);
+        account_handler.install_app(req,res);
     })
 }
 function addVersionNumber(req, res, next) {
@@ -254,7 +255,8 @@ const add_app_uses = function(){
         app.post('/v1/account/applogin', addVersionNumber, account_handler.login);
         app.post('/v1/account/applogout', addVersionNumber, account_handler.logout);
         app.put ('/v1/account/changePassword.json', userDataAccessRights, account_handler.changePassword);
-        app.put ('/v1/account/upload_app_zipfile.json', userDataAccessRights, uploadAppZipFile);
+        app.put ('/v1/account/app_install_from_zipfile.json', userDataAccessRights, installAppFromZipFile);
+        app.post ('/v1/account/app_install_from_url.json', userDataAccessRights, addVersionNumber, account_handler.get_file_from_url_to_install_app);
 
         app.get('/v1/account/app_list.json', userDataAccessRights, account_handler.list_all_user_apps);
         app.post('/v1/account/appMgmtActions.json', userDataAccessRights, account_handler.appMgmtActions);
@@ -275,9 +277,9 @@ const add_app_uses = function(){
                 if (err) {
                     helpers.send_auth_failure(res, "admin_handler", exports.version,"change_main_prefs",err.message, err.errCode);
                 } else {
-                    freezr_prefs = returns.newPrefs;
                     console.log("new freezr_prefs returns")
                     console.log(returns)
+                    freezr_prefs = returns;
                     helpers.send_success(res, returns);
                 }
             })
@@ -303,8 +305,8 @@ const add_app_uses = function(){
 
     // default redirects
         function getPublicUrlFromPrefs () {
-            //onsole.log(freezr_prefs)
-            if (!freezr_prefs.redirect_public) return "/account/login";
+            console.log(freezr_prefs)
+            if (!freezr_prefs || !freezr_prefs.redirect_public) return "/account/login";
             if (!freezr_prefs.public_landing_page) return "/ppage";
             return "/papp/"+freezr_prefs.public_landing_page;
         }
@@ -362,7 +364,7 @@ async.waterfall([
         if (!err) {
           freezr_environment = env_on_file.params;
           freezrStatus.environment_file_exists_no_faults = true;
-          console.log("1. Local copy of freezr_environment.js exists",freezr_environment)
+          console.log("1. Local copy of freezr_environment.js exists") //,JSON.stringify (freezr_environment))
           cb(null)
         } else {
           // todo later: consider also case where file is corrupt - here we assume it doesnt exist and try other options
@@ -529,8 +531,8 @@ async.waterfall([
     function (err) {
         if (err) console.log(" =================== Got err on start ups =================== ")
         console.log("Startup checks complete.")
-        console.log("freezr_prefs: ")
-        console.log(freezr_prefs)
+        //onsole.log("freezr_prefs: ")
+        //onsole.log(freezr_prefs)
         console.log("freezrStatus: ")
         console.log(freezrStatus)
         //onsole.log(freezr_environment)

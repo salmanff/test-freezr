@@ -1,5 +1,5 @@
 // freezr.info - nodejs system files - db_handler.js
-exports.version = "0.0.130"; // Changed names from freezr__db
+exports.version = "0.0.131"; // Changed names from freezr__db
 
 // Note on queries
 //  Currently queires must have $and at the top level with no other object keys (ie all must be placed in the àand object)
@@ -74,16 +74,14 @@ exports.re_init_environment_sync = function(env_params)  {
     }
 }
 exports.re_init_freezr_environment = function(env_params, callback)  {
-  console.log("in db_handler re_init_freezr_environment with ",env_params)
+  //onsole.log("in db_handler re_init_freezr_environment with ",env_params)
 
     if (env_params && env_params.dbParams && (
             env_params.dbParams.dbtype == "gaeCloudDatastore" ||
             env_params.dbParams.dbtype == "nedb"
           ) )  {
-            console.log("is nedb ")
       const file_env_name = "db_env_"+env_params.dbParams.dbtype+".js";
         if (fs.existsSync(file_handler.systemPathTo('freezr_system/environment/'+file_env_name))) {
-          console.log("file exist ")
             let env_okay = true;
             try {
                 custom_environment =  require(file_handler.systemPathTo('freezr_system/environment/'+file_env_name));
@@ -130,7 +128,7 @@ exports.db_insert = function (env_params, appcollowner, id, entity, options, cb)
   // only inserts one entity at a time
   appcollowner.app_name = appcollowner.app_name.replace(/\./g,"_")
   if (!options || !options.restoreRecord){
-    helpers.RESERVED_FIELD_LIST.forEach((aReservedField) => delete entity[aReservedField] )
+    if (!options || !options.keepReservedFields) helpers.RESERVED_FIELD_LIST.forEach((aReservedField) => delete entity[aReservedField] )
     entity._date_Created  = new Date().getTime();
     entity._date_Modified = new Date().getTime();
     entity._owner         = appcollowner._owner
@@ -150,7 +148,7 @@ exports.db_find = function(env_params, appcollowner, idOrQuery, options, callbac
   // options are sort, count, skip
   appcollowner.app_name = appcollowner.app_name.replace(/\./g,"_")
   if (typeof idOrQuery == "string") {
-    dbToUse(env_params).db_getbyid(env_params, appcollowner, idOrQuery, callback)
+    dbToUse(env_params).db_getbyid(env_params, appcollowner, idOrQuery, function(err, object) {callback(err, (object? [object]:[]))})
   } else {
     let [err, well_formed] = query_is_well_formed(idOrQuery)
     if (well_formed) {
@@ -181,12 +179,29 @@ exports.db_update = function (env_params, appcollowner, idOrQuery, updates_to_en
 }
 
 
+exports.update_object_accessibility = function (env_params, appcollowner, id, the_object, changes, cb) {
+  // replaces old entity with new one. (NB if old_object had a previous field, it should be set to null for Mongo)
+  // keeps the old _date_Modified
+  appcollowner.app_name = appcollowner.app_name.replace(/\./g,"_")
+  the_object._accessible_By = changes._accessible_By;
+  the_object._date_Published = changes._date_Published;
+  if (changes._publicid) the_object._publicid = changes._publicid;
+  the_object._date_Accessibility_Mod = new Date().getTime();
+  dbToUse(env_params).replace_record_by_id (env_params, appcollowner, id, the_object, cb);
+}
+exports.replace_accessible_record = function (env_params, appcollowner, id, new_object, cb) {
+  // replaces old entity with new one. (NB if old_object had a previous field, it should be set to null for Mongo)
+  appcollowner.app_name = appcollowner.app_name.replace(/\./g,"_")
+  new_object._date_Modified= new Date().getTime();
+  dbToUse(env_params).replace_record_by_id (env_params, appcollowner, id, new_object, cb);
+}
+
 exports.update_app_record = function (env_params, appcollowner, id, old_object, updates_to_entity, cb) {
   // replaces old entity with new one. (NB if old_object had a previous field, it should be set to null for Mongo)
   appcollowner.app_name = appcollowner.app_name.replace(/\./g,"_")
   helpers.RESERVED_FIELD_LIST.forEach((aReservedField) => updates_to_entity[aReservedField] = old_object[aReservedField])
   updates_to_entity._date_Modified = new Date().getTime();
-  dbToUse(env_params).update_record_by_id (env_params, appcollowner, id, updates_to_entity, cb);
+  dbToUse(env_params).replace_record_by_id (env_params, appcollowner, id, updates_to_entity, cb);
 }
 exports.db_remove = function (env_params, appcollowner, idOrQuery, options, cb) {
     // No options at this point - reserved for future
@@ -240,9 +255,8 @@ exports.getAllCollectionNames= function (env_params, app_name, callback) {
 
 //CUSTOM ENV AND  ENV ACTIONS (ie SET UP etc)
 exports.get_or_set_prefs = function (env_params, prefName, prefsToSet, doSet, callback) {
-  console.log("get_or_set_prefs Done for "+prefName+ "doset?"+doSet)
-  console.log("TO REVIEW / DEBUG - prefsToSet")
-  console.log(prefsToSet)
+  //onsole.log("get_or_set_prefs Done for "+prefName+ "doset?"+doSet)
+  //onsole.log(prefsToSet)
   let pref_on_db={}, err=null;
 
   const callFwd = function(err, write_result) {
@@ -254,12 +268,12 @@ exports.get_or_set_prefs = function (env_params, prefName, prefsToSet, doSet, ca
   exports.db_getbyid(env_params, PARAMS_APC, prefName, (err, results)=> {
     if (err) {
       callFwd(err)
-    } else if (!doSet && results && results.length>0) {
-        pref_on_db = results[0];
+    } else if (!doSet && results) {
+        pref_on_db = results;
         callFwd(null);;
     } else if (doSet && prefsToSet) {
         pref_on_db = prefsToSet
-        if (results && results.length>0){
+        if (results){
             console.warn("inserting new prefs ", pref_on_db)
             exports.db_update(env_params, PARAMS_APC, prefName, pref_on_db, {replaceAllFields:true, multi:false}, callFwd)
         } else {
@@ -868,17 +882,16 @@ exports.create_query_permission_record = function (env_params, user_id, requesto
         _owner: 'freezr_admin',                  // Required
         _date_Created: new Date().getTime(),
         //_date_Modified: new Date().getTime()
+        permitted_fields: permission_object.permitted_fields? permission_object.permitted_fields: null,
+        sharable_groups : permission_object.sharable_groups? permission_object.sharable_groups: "self",
+        return_fields   : permission_object.return_fields? permission_object.return_fields: null,
+        anonymously     : permission_object.anonymously? permission_object.anonymously: false,
+        search_fields   : permission_object.search_fields? permission_object.search_fields: null,
+        sort_fields     : permission_object.sort_fields? permission_object.sort_fields: null, // todo later -  only 1 sort field can work at this point - to add more...
+        max_count       : permission_object.count? permission_object.count: null,
     };
 
-    if (write.type == "replaceAllFields") {
-        write.permitted_fields = permission_object.permitted_fields? permission_object.permitted_fields: null;
-        write.sharable_groups = permission_object.sharable_groups? permission_object.sharable_groups: "self";
-        //write.allowed_user_ids = permission_object.allowed_user_ids? permission_object.allowed_user_ids: null;
-        write.return_fields = permission_object.return_fields? permission_object.return_fields: null;
-        write.anonymously = permission_object.anonymously? permission_object.anonymously: false;
-        write.sort_fields = permission_object.sort_fields? permission_object.sort_fields: null; // todo later -  only 1 sort field can work at this point - to add more...
-        write.max_count = permission_object.count? permission_object.count: null;
-    } else if (write.type == "field_delegate") {
+    if (write.type == "field_delegate") {
         write.sharable_fields = permission_object.sharable_fields? permission_object.sharable_fields : [];
         write.sharable_groups = permission_object.sharable_groups? permission_object.sharable_groups : "self";
     } else if (write.type == "folder_delegate") {
@@ -961,6 +974,7 @@ exports.permission_by_owner_and_permissionName = function (env_params, user_id, 
                                   {'permission_name':permission_name}
                         ]};
         exports.db_find(env_params, PERMISSION_APC, dbQuery, {}, callback)
+        //function(err, results){console.log('err'); console.log(err); console.log(results) callback(err, results)}
     }
 }
 exports.permission_by_owner_and_objectId = function (user_id, requestee_app, collection_name, data_object_id, callback) {

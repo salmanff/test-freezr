@@ -1,7 +1,7 @@
 // freezr.info - nodejs system files - account_handler
-exports.version = "0.0.122";
+exports.version = "0.0.131";
 
-var helpers = require('./helpers.js'),
+const helpers = require('./helpers.js'),
     db_handler = require("./db_handler.js"),
     user_obj = require("./user_obj.js"),
     async = require('async'),
@@ -356,75 +356,135 @@ exports.list_all_user_apps = function (req, res) {
         }
     });
 };
-exports.add_uploaded_app_zip_file = function (req, res) {
-    // app.put ('/v1/account/upload_app_zipfile.json', requireUserRights, uploadAppZipFile);
-    helpers.log (req,"add_uploaded_app_zip_file body") //+JSON.stringify(req.body));
+exports.get_file_from_url_to_install_app = function(req,res) {
+  // app.put ('/v1/account/app_install_from_url.json', requireUserRights, installAppFromUrl);
+  //onsole.log("get_file_from_url_to_install_app",req.body)
 
-    var app_name, app_path, app_version=null; app_display_name=null;
+
+  const fs = require('fs');
+  const request = require('request');
+
+  const download = (url, dest, cb) => {
+      // from stackoverflow.com/questions/11944932/how-to-download-a-file-with-node-js-without-using-third-party-libraries
+
+      const file = fs.createWriteStream(dest);
+      const sendReq = request.get(url);
+
+      // verify response code
+      sendReq.on('response', (response) => {
+          if (response.statusCode !== 200) {
+              return cb(new Error ('Bad Connection - Response status was ' + response.statusCode));
+          }
+          sendReq.pipe(file);
+      });
+
+      // close() is async, call cb after close completes
+      file.on('finish', () => file.close(cb));
+
+      // check for request errors
+      sendReq.on('error', (err) => {
+          fs.unlink(dest);
+          return cb(err);
+      });
+
+      file.on('error', (err) => { // Handle errors
+          fs.unlink(dest); // Delete the file async. (But we don't check the result)
+          return cb(err);
+      });
+  };
+
+
+  let partialPathDir = file_handler.partPathToUserAppFiles (null, req.body.app_name+".zip").slice(1)
+
+  download(req.body.app_url, partialPathDir, function(err) {
+    if (!err && req.body.app_name) {
+      req.app_name = req.body.app_name
+      req.file={}
+      req.file.originalname = req.body.app_name+".zip"
+      req.file.buffer=partialPathDir
+      req.installsource = "get_file_from_url_to_install_app"
+      exports.install_app (req, res)
+      // console todonow  delete tempfile... determine name ... put file under userfiles
+    } else { // err or missing app name
+      let flags = new Flags({});
+      flags.meta.app_name = req.body.app_name;
+      if (!err) err = {code:'Missing App name', message:'app name is required to create an app.'}
+      if (!err.code) err.code = 'err_unknown';
+      if (!err.message) err.message = 'Could not connect to the requested URL';
+      flags.add('errors', err.code, {'function':'install_app', 'text':err.message});
+
+      helpers.send_success(res, {success:false, err:err, flags:flags, text:""});
+    }
+  })
+}
+exports.install_app = function (req, res) {
+    // app.put ('/v1/account/app_install_from_zipfile.json', requireUserRights, installAppFromZipFile);
+    // exports.get_file_from_url_to_install_app
+    //onsole.log("install_app file.originalname ",req.file.originalname,"app_name ",req.app_name)
+
+    helpers.log (req,"install_app "+req.file.originalname+(req.installsource || "")) //+;
+
+    var app_name = req.app_name, app_path, app_version=0; app_display_name=null;
+
+    if (!app_name) {
+      let parts = req.file.originalname.split('.');
+      if (helpers.endsWith(parts[(parts.length-2)],"-master")) parts[(parts.length-2)] = parts[(parts.length-2)].slice(0,-7);
+
+      if (helpers.startsWith((parts[(parts.length-2)]),"_v_")) {
+          app_version = parts[parts.length-2].slice(3);
+          parts.splice(parts.length-2,2);
+      } else {
+          parts.splice(parts.length-1,1);
+      }
+      app_name = parts.join('.');
+      app_name = app_name.split(' ')[0];
+    }
+
     var flags = new Flags({});
 
     async.waterfall([
-    // 1. make sure data and file names exist
+    // 1. make sure data and file names exist and app_name is correct
         function (cb) {
             if (!req.session.logged_in_user_id)
                 cb(helpers.missing_data("user_id"));
             else if (!req.session.logged_in_as_admin)
-                helpers.auth_failure("account_handler", exports.version,"add_uploaded_app_zip_file","Could not add apps without admin privelages.");
+                helpers.auth_failure("account_handler", exports.version,"install_app","Could not add apps without admin privelages.");
             else if (!req.file)
-                cb(helpers.missing_data("file","account_handler", exports.version, "add_uploaded_app_zip_file"));
+                cb(helpers.missing_data("file","account_handler", exports.version, "install_app"));
             else if (!req.file.originalname)
-                cb(helpers.missing_data("file name","account_handler", exports.version, "add_uploaded_app_zip_file"));
+                cb(helpers.missing_data("file name","account_handler", exports.version, "install_app"));
             else if (req.file.originalname.length<5 || req.file.originalname.substr(-4) != ".zip")
-                cb(helpers.invalid_data("file name not zip: "+req.file.originalname, "account_handler", exports.version, "add_uploaded_app_zip_file"));
-            else
-                cb(null);
-        },
-
-    // 2. Make sure it is a zip file and extract the app_name
-        function (cb) {
-
-            var parts = req.file.originalname.split('.');
-            if (helpers.endsWith(parts[(parts.length-2)],"-master")) parts[(parts.length-2)] = parts[(parts.length-2)].slice(0,-7);
-
-            if (helpers.startsWith((parts[(parts.length-2)]),"_v_")) {
-                app_version = parts[parts.length-2].slice(3);
-                parts.splice(parts.length-2,2);
-            } else {
-                parts.splice(parts.length-1,1);
-            }
-            app_name = parts.join('.');
-            app_name = app_name.split(' ')[0];
-
-            if (app_name.length<1) {
-                cb(helpers.invalid_data("app name missing - that is the name of the app zip file name before any spaces.", "account_handler", exports.version, "add_uploaded_app_zip_file"));
+                cb(helpers.invalid_data("file name not zip: "+req.file.originalname, "account_handler", exports.version, "install_app"));
+            else if (app_name.length<1) {
+                cb(helpers.invalid_data("app name missing - that is the name of the app zip file name before any spaces.", "account_handler", exports.version, "install_app"));
             } else if (!helpers.valid_app_name(app_name)) {
-                cb(helpers.invalid_data("app name: "+app_name, "account_handler", exports.version, "add_uploaded_app_zip_file"));
+                cb(helpers.invalid_data("app name: "+app_name, "account_handler", exports.version, "install_app"));
             } else if (helpers.system_apps.indexOf(app_name)>-1  || !helpers.valid_app_name(app_name)){
-                cb(helpers.invalid_data("app name not allowed: "+app_name, "account_handler", exports.version, "add_uploaded_app_zip_file"));
+                cb(helpers.invalid_data("app name not allowed: "+app_name, "account_handler", exports.version, "install_app"));
             } else {
                 flags = new Flags({'app_name':app_name,'didwhat':'installed'});
                 cb(null);
             }
         },
 
-    // 3. Make sure app directory exists
+    // 2. Make sure app directory exists
         function (cb) {
             file_handler.checkExistsOrCreateUserAppFolder(app_name, req.freezr_environment, cb);
         },
 
-    // 4. Extract Zip File Contents
+    // 3. Extract Zip File Contents
         function (cb) {
             file_handler.extractZippedAppFiles(req.file.buffer, app_name, req.file.originalname, req.freezr_environment, cb);
         },
 
-        // 5a. Get and check app_config (populate app_version and app_display_name and permissons)
+        // 4. Get and check app_config (populate app_version and app_display_name and permissons)
         function (cb) {
             file_handler.async_app_config(app_name, req.freezr_environment,cb);
         },
-        // 5b. make sure all data exits
+        // 5. make sure all data exits
         function (app_config, cb) {
             if (app_config)  {
-                if (!app_version && app_config.meta && app_config.meta.app_version) app_version = app_config.meta.app_version;
+                if (app_config.meta && app_config.meta.app_version) app_version = app_config.meta.app_version;
                 if (app_config && app_config.meta && app_config.meta.app_display_name) app_display_name = app_config.meta.app_display_name;
                 flags = file_handler.check_app_config(app_config, app_name, app_version, flags);
             } else {
@@ -473,7 +533,17 @@ exports.add_uploaded_app_zip_file = function (req, res) {
             }
         },
 
+        // 9. delete temporary file when app has been downloaded
         function(app_info, cb) {
+          if (req.installsource == "get_file_from_url_to_install_app"){
+            const fs=require('fs')
+            fs.unlink(req.file.buffer, cb)
+          } else {
+            cb(null);
+          }
+        },
+
+        function(cb) {
             if (flags.meta.didwhat == "uploaded") {
                 db_handler.get_or_set_user_app_code(req.freezr_environment, req.session.logged_in_user_id,app_name, cb);
             } else {
@@ -489,12 +559,11 @@ exports.add_uploaded_app_zip_file = function (req, res) {
         // todo: also better to wipe out old files so old files dont linger if they dont exist in new version
         flags.meta.app_name = app_name;
         if (err) {
-            // todo later: perhaps delete the zip file
             if (!err.code) err.code = 'err_unknown';
-            flags.add('errors', err.code, {'function':'add_uploaded_app_zip_file', 'text':err.message});
+            flags.add('errors', err.code, {'function':'install_app', 'text':err.message});
         }
         //onsole.log(flags.sentencify())
-        helpers.send_success(res, flags.sentencify() );
+        helpers.send_success(res, {err:err, flags:flags.sentencify()} );
     });
 }
 exports.appMgmtActions  = function (req,res) /* deleteApp updateApp */ {
@@ -569,7 +638,6 @@ exports.appMgmtActions  = function (req,res) /* deleteApp updateApp */ {
                     flags.add('notes','appconfig_missing');
                 }
                 if (!app_display_name) app_display_name = app_name;
-                if (!app_version) app_version = 1;
 
                 if (app_config) {
                     db_handler.update_permission_records_from_app_config(req.freezr_environment, app_config, app_name, req.session.logged_in_user_id, flags, cb);

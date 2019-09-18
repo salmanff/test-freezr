@@ -52,7 +52,7 @@ exports.generatePage = function (req, res) {
                 var page_name = req.params.page? req.params.page: "index";
                 var has_app_config = true;
                 if (!app_config) {
-                    app_config = {};
+                    app_config = {pages:{}};
                     has_app_config = false;
                 }
                 app_config.pages = app_config.pages || {};
@@ -106,14 +106,15 @@ exports.generatePage = function (req, res) {
                     }
                     exports.db_query(req, res);
 
-                } else if (!has_app_config){
-                    // todo - check if the files exist first
-                    app_config.pages[page_name].page_title  =  page_name;
-                    app_config.pages[page_name].html_file   =  page_name+".html"; // file_handler.appLocalFileExists(req.params.app_name, (page_name+".html"))?  page_name+".html" : null;
-                    app_config.pages[page_name].css_files   =  page_name+".css"; // file_handler.appLocalFileExists(req.params.app_name, (page_name+".css" ))?  page_name+".css"  : null;
-                    app_config.pages[page_name].script_files= [page_name+".js"] //file_handler.appLocalFileExists(req.params.app_name, (page_name+".js"  ))? [page_name+".js"]  : null;
-                    generatePageWithAppConfig(req, res, app_config);
                 } else {
+                    // todo - check if the files exist first?
+                    if (!has_app_config || !app_config.pages[page_name] || !app_config.pages[page_name].page_title){
+                      app_config.pages[page_name]={}
+                      app_config.pages[page_name].page_title  =  page_name;
+                      app_config.pages[page_name].html_file   =  page_name+".html"; // file_handler.appLocalFileExists(req.params.app_name, (page_name+".html"))?  page_name+".html" : null;
+                      app_config.pages[page_name].css_files   =  page_name+".css"; // file_handler.appLocalFileExists(req.params.app_name, (page_name+".css" ))?  page_name+".css"  : null;
+                      app_config.pages[page_name].script_files= [page_name+".js"] //file_handler.appLocalFileExists(req.params.app_name, (page_name+".js"  ))? [page_name+".js"]  : null;
+                    }
                     generatePageWithAppConfig(req, res, app_config);
                 }
             }
@@ -232,7 +233,8 @@ exports.putData = function (req, res){
       let   data_object_id= (req.body.options && req.body.options.data_object_id)? req.body.options.data_object_id: null;
       let   write = (req.body && req.body.data)? JSON.parse(JSON.stringify(req.body.data)): {};
       const restoreRecord = (req.body.options && req.body.options.restoreRecord)
-      const updateRecord  = (req.body.options && req.body.options.updateRecord)
+      const updateRecord  = (req.body.options && (req.body.options.updateRecord || req.body.options.update))
+      const upsertRecord  = (req.body.options && req.body.options.upsert)
 
       let fileParams = {'dir':"", 'name':"", 'duplicated_file':false};
           fileParams.is_attached = (req.file)? true:false;
@@ -264,7 +266,7 @@ exports.putData = function (req, res){
                 if (data_object_id) flags.add('warnings','dataObjectIdSentWithFiles');
                 collection_name = "files";
                 data_model = (app_config && app_config.files)? app_config.files: null;
-            } else if (req.params.collection == "files" && updateRecord){
+            } else if (req.params.collection == "files" && updateRecord){ //201909 review - also
                 collection_name = "files";
                 data_model = (app_config && app_config.files)? app_config.files: null;
             } else {
@@ -303,7 +305,7 @@ exports.putData = function (req, res){
                         }
                     })
                 } else if (helpers.system_apps.indexOf(req.params.app_name)>-1 ){
-                    cb(helpers.invalid_data("app name not allowed: "+req.params.app_name, "account_handler", exports.version, "add_uploaded_app_zip_file"));
+                    cb(helpers.invalid_data("app name not allowed: "+req.params.app_name, "account_handler", exports.version, "putData"));
                 } else {
                     cb(app_err("Collection name "+collection_name+"is invalid."));
                 }
@@ -348,7 +350,7 @@ exports.putData = function (req, res){
                       && (!data_model || !data_model.make_data_id || (!data_model.make_data_id.from_field_names && !data_model.make_data_id.manual))) {
                 delete write._id;
                 cb(null, null);
-            } else if (updateRecord) {
+            } else if (updateRecord) { // 201909: redundant now that have it further below?
                 delete write._id;
                 cb(null, null);
             } else if (data_model && data_model.make_data_id && data_model.make_data_id.manual) {
@@ -421,12 +423,14 @@ exports.putData = function (req, res){
                 if ((req.body.options && req.body.options.fileOverWrite) && fileParams.is_attached) flags.add('warnings','fileRecordExistsWithNoFile');
                 db_handler.db_insert(req.freezr_environment, appcollowner, data_object_id, write, {restoreRecord: restoreRecord}, cb)
             } else if (results.length == 1
-                        && (  (updateRecord || (data_model && data_model.make_data_id && data_model.make_data_id.manual))
+                        && (  ((updateRecord || upsertRecord) || (data_model && data_model.make_data_id && data_model.make_data_id.manual))
                            || (fileParams.is_attached  && (req.body.options && req.body.options.fileOverWrite)) )
                         && results[0]._owner == req.session.logged_in_user_id) { // file data being updated
-                          isAccessibleObject = (final_object._accessible_By && final_object._accessible_By.groups && final_object._accessible_By.groups.length>0);
+              let old_object = results[0]
+              isAccessibleObject = (old_object._accessible_By && old_object._accessible_By.groups && old_object._accessible_By.groups.length>0); // 201909 - to review
               returned_confirm_fields._updatedRecord=true;
-              db_handler.update_app_record (req.freezr_environment, appcollowner, data_object_id, results[0],write, cb)
+              delete write._id;
+              db_handler.update_app_record (req.freezr_environment, appcollowner, data_object_id, old_object,write, cb)
             } else if (results.length == 1) {
                 cb(app_err("data object ("+data_object_id+") already exists. Set updateRecord to true in options to update a document, or fileOverWrite to true when uploading files."));
             } else {
@@ -454,14 +458,11 @@ exports.putData = function (req, res){
                     var acc_id = req.session.logged_in_user_id+"/"+requestorapp_permname+"/"+req.params.app_name+"/"+collection_name+"/"+data_object_id;
                     //onsole.log("getting acc_id "+acc_id)
                     db_handler.db_getbyid(req.freezr_environment, accessibles_collection, acc_id, function(err, results) {
-                      if (!results || results.length==0) {
+                      if (!results) {
                           flags.add('warnings', "missing_accessible", {"_id":acc_id, "msg":"permission does not exist - may have been removed - should remove public"});
                           cb2(null);
-                      }  else if (!results.length>1) {
-                          flags.add('warnings', "too_many_accessibles", {"_id":acc_id, "msg":"internal error - more than one permission retrieved"});
-                          cb2(null);
                       } else {
-                          permission_object = results[0];
+                          permission_object = results;
                           permission_object.data_object = {};
                           var requestorApp = requestorapp_permname.split("/")[0];
 
@@ -481,7 +482,8 @@ exports.putData = function (req, res){
                                       } else {
                                           new_data_obj = final_object;
                                       }
-                                      db_handler.update_app_record (req.freezr_environment, accessibles_collection, permission_object, {data_object: new_data_obj}, cb)
+                                      permission_object.data_object = new_data_obj;
+                                      db_handler.replace_accessible_record (req.freezr_environment, accessibles_collection, acc_id, permission_object, cb)
                                   } else {
                                       flags.add('warnings', "app_config_error", {"_id":acc_id, "msg":"no "+(requestorAppConfig?"app_config":("permission_name or model for "+permission_name))});
                                       cb2(null);
@@ -607,21 +609,17 @@ exports.getDataObject= function(req, res) {
 
         // 5. check if record fits criteria and return it if it belongs to the logged in user (own_record)
         function (results, cb) {
-            if (!results || results.length==0) {
+            //onsole.log("got results ",results)
+            if (!results) {
                 cb(app_err("no related records"))
             } else {
-                if (results.length>1) {
-                    console.warn('MoreThanOneRecordRetrieved - SNBH')
-                    flags.add('warnings','MoreThanOneRecordRetrieved - SNBH');
-                }
-
                 if (!own_record && !request_file && permission_model.return_fields && permission_model.return_fields.length>0) {
                     resulting_record = {};
                     for (var i=0; i<permission_model.return_fields.length; i++) {
-                        resulting_record[permission_model.return_fields[i]] =  results[0][permission_model.return_fields[i]];
+                        resulting_record[permission_model.return_fields[i]] =  results[permission_model.return_fields[i]];
                     }
                 } else {
-                    resulting_record = results[0];
+                    resulting_record = results;
                 }
 
                 if (own_record) {
@@ -762,7 +760,6 @@ exports.getDataObject= function(req, res) {
             if (flags.warnings) console.warn("flags:"+JSON.stringify(flags))
             file_handler.sendUserFile(res, unescape(parts.join('/')), req.freezr_environment );
         } else {
-            //onsole.log("sending record:"+JSON.stringify(resulting_record));
             helpers.send_success(res, {'results':resulting_record, 'flags':flags});
         }
     });
@@ -1119,6 +1116,7 @@ exports.setObjectAccess = function (req, res) {
         records_changed=0;
         real_object_id=null;
 
+    //onsole.log("req.body",req.body)
 
     var data_object_id = req.body.data_object_id? req.body.data_object_id : null;
     var query_criteria = req.body.query_criteria? req.body.query_criteria : null;
@@ -1136,7 +1134,7 @@ exports.setObjectAccess = function (req, res) {
     var addToAccessibles =  new_shared_with_group == "public"  && !req.body.not_accessible;
     // currently added query_criteria to deal with multuple items, but "make_accessible" section only works with one object at a time - to be fixed / updated later (Todo later)
 
-    helpers.log("setObjectAccess by "+req.session.logged_in_user_id+" for "+data_object_id+" query:"+ JSON.stringify(query_criteria)+" action"+JSON.stringify(req.body.action)+" perm: " +req.params.permission_name,"collection name: ",req.body.collection);
+    helpers.log(req,"setObjectAccess by "+req.session.logged_in_user_id+" for "+data_object_id+" query:"+ JSON.stringify(query_criteria)+" action"+JSON.stringify(req.body.action)+" perm: " +req.params.permission_name,"collection name: ",req.body.collection);
 
     function app_err(message) {return helpers.app_data_error(exports.version, "putData", req.params.requestor_app + "- "+message);}
 
@@ -1204,6 +1202,9 @@ exports.setObjectAccess = function (req, res) {
         // 4. check permission is granted and can authorize requested fields, and if so, get permission collection
         // 5. open object by id
         function (results, cb) {
+            //onsole.log("permission_by_owner_and_permissionName")
+            //onsole.log(results)
+
             if (!results || results.length==0) {
                 cb(helpers.error("PermissionMissing","permission does not exist"))
             }  else if (!results[0].granted) {
@@ -1219,9 +1220,10 @@ exports.setObjectAccess = function (req, res) {
                   _owner:req.session.logged_in_user_id
                 }
                 if (query_criteria) query_criteria._owner = req.session.logged_in_user_id;
+
                 db_handler.db_find(req.freezr_environment, appcollowner,
-                  data_object_id? {'_id':data_object_id,'_owner':req.session.logged_in_user_id}
-                                  : query_criteria,
+                  (data_object_id? {'_id':data_object_id,'_owner':req.session.logged_in_user_id}
+                                  : query_criteria),
                   {},cb)
             }
         },
@@ -1290,11 +1292,12 @@ exports.setObjectAccess = function (req, res) {
 
                     // add _pubishdate if it exists
 
+                    // note purposefully hardoded so only these changes will be accepted in db_handler: _accessible_By, _publicid, _date_Published
                     var changes = {_accessible_By:accessibles}
                     if (addToAccessibles) changes._publicid = (doGrant? accessibles_object_id: null);
                     changes._date_Published = date_Published;
                     records_changed++
-                    db_handler.update_app_record (req.freezr_environment, appcollowner, data_object._id, data_object, changes, cb)
+                    db_handler.update_object_accessibility (req.freezr_environment, appcollowner, data_object._id, data_object, changes, cb)
 
                   },
                   function (err) {
@@ -1308,16 +1311,20 @@ exports.setObjectAccess = function (req, res) {
         },
 
         //7 get accessible_objects and write to it
-        function (cb) {
+        function (results, cb) {
           if (the_one_public_data_object.length>1) {
               cb(app_err("Cannot set multiple records to accessible. Feature to be created later."));
               console.warn(the_one_public_data_object)
           } else if (addToAccessibles) {
-            db_handler.db_find(req.freezr_environment, accessibles_collection, {_id:accessibles_object_id}, {}, callback)
+            //onsole.log("7 find "+req.session.logged_in_user_id+" for "+data_object_id+ " accessibles_object_id:"+accessibles_object_id)
+
+            db_handler.db_find(req.freezr_environment, accessibles_collection, {"data_owner":req.session.logged_in_user_id,"data_object_id":data_object_id}, {}, cb)
+
           } else {cb(null, null)}
         },
         // 8. write or update the results
         function (results, cb) {
+          //onsole.log("results",results)
             if (addToAccessibles) {
                 if (results == null || results.length == 0) {
                     //  accessibles_object_id automated version is req.session.logged_in_user_id+"/"+req.params.requestor_app+"/"+req.params.permission_name+"/"+requestee_app+"/"+collection_name+"/"+data_object_id;
@@ -1330,8 +1337,6 @@ exports.setObjectAccess = function (req, res) {
                         'collection_name': collection_name,
                         'shared_with_group':[new_shared_with_group],
                         'shared_with_user':[new_shared_with_user],
-                        '_date_Modified' : new Date().getTime(),
-                        '_date_Created' : new Date().getTime(),
                         '_date_Published' :date_Published,
                         'data_object' : the_one_public_data_object[0], // make this async and go through al of them
                         'search_words' : search_words,
@@ -1343,18 +1348,20 @@ exports.setObjectAccess = function (req, res) {
                         app_err("cannot remove a permission that doesnt exist");
                         cb(null); // Internal error which can be ignored as non-existant permission was being removed
                     } else { // write new permission
-                        //onsole.log("writing new ",accessibles_object)
-                        db_handler.db_insert (req.freezr_environment, accessibles_collection, null, accessibles_object, {}, cb)
+                        db_handler.db_insert (req.freezr_environment, accessibles_collection, null, accessibles_object, {keepReservedFields:true}, cb)
                     }
-                } else if (results.length == 1) { // update existing perm
+                } else  { // update existing perm
+                  if (results.length >1) {helpers.state_error( "app_handler", exports.version, "setObjectAccess","multiple_permissions", new Error("Retrieved mkroe than one permission where there should only be one "+JSON.stringify(results)), null)} // todo delete other ones?
                     var write = {};
-                    if (results[0].granted && results[0]._owner != req.session.logged_in_user_id) {
+                    if (results[0].granted && results[0].data_object && results[0].data_object._owner != req.session.logged_in_user_id) {
                         cb(app_err("Cannot overwrite an existing accessible object - other user"));
                     } else if (results[0].granted && results[0].requestor_app != req.params.requestor_app){
                         cb(app_err("Cannot overwrite an existing accessible object - other app"));
                     } else if (results[0].granted && results[0].data_object_id != data_object_id){
                         cb(app_err("Cannot overwrite an existing accessible object - other app"));
-                    } if (doGrant) {
+                    }
+                    // todo - flag if regranting...
+                    if (doGrant) {
                         write.granted=true;
                         write.shared_with_group = helpers.addToListAsUnique(results[0].shared_with_group,new_shared_with_group);
                         if (new_shared_with_group=="user") write.shared_with_user = helpers.addToListAsUnique(results[0].shared_with_user,new_shared_with_user);
@@ -1367,8 +1374,7 @@ exports.setObjectAccess = function (req, res) {
                         }
                         write.granted = ( (write.shared_with_group && write.shared_with_group.length>0) ) ;
                     }
-                    // to review why this was repeted - update_app_record now should handle just the changes. Any reason to redo all?
-                    write._date_Modified = new Date().getTime();
+                    // to review why this was repeted - replace_accessible_record now should handle just the changes. Any reason to redo all?
                     write._date_Published = date_Published;
                     write.data_object = the_one_public_data_object[0];
                     write.search_words = search_words;
@@ -1378,9 +1384,7 @@ exports.setObjectAccess = function (req, res) {
                     write.permission_name = req.params.permission_name;  // in case of re-use of another object
                     write.requestor_app = req.params.requestor_app; // in case of re-use of another object
                     write.collection_name = collection_name; // in case of re-use of another object
-                    db_handler.update_app_record (req.freezr_environment, accessibles_collection, accessibles_object_id, results[0], write, cb)
-                } else {
-                    cb(app_err("Can not update multiple objects retrieved - SNBH"));
+                    db_handler.replace_accessible_record (req.freezr_environment, accessibles_collection, accessibles_object_id, write, cb)
                 }
             } else {cb(null, null)}
         },
@@ -1388,7 +1392,8 @@ exports.setObjectAccess = function (req, res) {
         // 10 Add accessible id back to object
         function(results, cb) {
             if (addToAccessibles) {
-              db_handler.update_app_record (req.freezr_environment, appcollowner, data_object_id, the_one_public_data_object[0], {_publicid:(doGrant? accessibles_object_id: null)}, cb)
+              the_one_public_data_object[0]._publicid = doGrant? accessibles_object_id: null;
+              db_handler.update_app_record (req.freezr_environment, appcollowner, data_object_id, the_one_public_data_object[0], the_one_public_data_object[0], cb)
             } else {cb(null, null)}
         }
     ],

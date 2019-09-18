@@ -88,7 +88,7 @@ exports.db_find = function(env_params, appcollowner, query, options, cb) {
   //onsole.log("in nedb db_find ",query, "options",options)
   const coll = get_coll(env_params, appcollowner)
   coll.find(query)
-      .sort(options.sort || null)
+      //.sort(options.sort || null)
       .limit(options.count || ARBITRARY_FIND_COUNT_DEFAULT)
       .skip(options.skip || 0)
       .exec(cb);
@@ -125,9 +125,17 @@ exports.db_remove = function (env_params, appcollowner, idOrQuery, options={}, c
   if (typeof idOrQuery=="string") idOrQuery={"_id":idOrQuery}
   coll.remove(idOrQuery, {multi:true}, cb);
 }
-exports.update_record_by_id = function (env_params, appcollowner, id, updates_to_entity, cb) {
+exports.replace_record_by_id = function (env_params, appcollowner, id, updates_to_entity, cb) {
   const coll = get_coll(env_params, appcollowner)
-  coll.update({_id: id }, {$set: updates_to_entity}, {safe: true, multi:false }, cb);
+  coll.update({_id: id }, {$set: updates_to_entity}, {safe: true, multi:false }, (err, result) =>{
+    if (err){
+      cb(err)
+    } else if (result == 1) {
+      cb(null, {entity:updates_to_entity})
+    } else {
+      cb(new Error("error updating record"))
+    }
+  });
 }
 
 exports.set_and_nulify_environment = function(old_env) {

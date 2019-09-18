@@ -5,7 +5,7 @@ exports.version = '0.0.122';
 var async = require('async'),
     flags_obj = require("./flags_obj.js");
 
-exports.RESERVED_FIELD_LIST = ["_owner","_date_Created", "_date_Modified","_accessible_By","_publicid","_id"];
+exports.RESERVED_FIELD_LIST = ["_owner","_date_Created", "_date_Modified","_accessible_By","_publicid","_id", "_date_Published","_date_Accessibility_Mod"];
 exports.USER_DIRS = ["userfiles", "userapps", "userbackups"]
 
 exports.log = function(req, message) {

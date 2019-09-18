@@ -112,7 +112,7 @@ exports.db_insert = function (env_params, appcollowner, id, entity, options, cal
     callback(null, success)
 
   }).catch((err) =>{
-    console.log("In insert got err ",err)
+    console.warn("In insert got err ",err)
     callback(err)
   });
 }
@@ -252,7 +252,7 @@ exports.db_update = function (env_params, appcollowner, idOrQuery, updates_to_en
   })
 }
 
-exports.update_record_by_id = function (env_params, appcollowner, id, updates_to_entity, cb) {
+exports.replace_record_by_id = function (env_params, appcollowner, id, updates_to_entity, cb) {
     // Assumes all non-system fields are being replaced
     ds.update({
       key: getGaeKey(appcollowner, id),

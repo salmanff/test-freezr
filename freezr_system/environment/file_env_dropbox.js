@@ -12,7 +12,7 @@ var Dropbox = require('dropbox'),
     fs = require('fs'), path = require('path'), // for cached app files
     json = require('comment-json');
 
-exports.version = "0.0.123";
+exports.version = "0.0.131";
 
 /*
 

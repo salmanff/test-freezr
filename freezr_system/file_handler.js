@@ -1,5 +1,5 @@
 // freezr.info - nodejs system files - file_handler
-exports.version = "0.0.122";
+exports.version = "0.0.131";
 
 var path = require('path'),
     fs = require('fs'),
@@ -167,23 +167,21 @@ exports.extractZippedAppFiles = function(zipfile, app_name, originalname, env_pa
             var app_path = exports.fullLocalPathToAppFiles(app_name, null)
             //onsole.log("extractZippedAppFiles to path "+app_path)
 
-            var zipEntries = zip.getEntries(); // an array of ZipEntry records
-            var gotDirectoryWithAppName = false;
+            let zipEntries = zip.getEntries(); // an array of ZipEntry records
+            let entryname=app_name+"/";
 
             zipEntries.forEach(function(zipEntry) {
-                // This is for case of compressing with mac, which also includes the subfolder - todo: review quirks with windows
-                if (zipEntry.isDirectory && zipEntry.entryName == app_name+"/") gotDirectoryWithAppName= true;
-                if (zipEntry.isDirectory && zipEntry.entryName == originalname+"/") gotDirectoryWithAppName= true;
-            });
+              if (!zipEntry.isDirectory && !helpers.startsWith(zipEntry.entryName, "__MACOSX")){
+                targetpath = zipEntry.entryName.replace(entryname, "")
+                targetpath = targetpath.lastIndexOf("/")>0? ("/"+targetpath.slice(0,targetpath.lastIndexOf("/"))) :""
+                zip.extractEntryTo(zipEntry.entryName, (app_path+targetpath), false, true);
+              }
+            })
 
-            if (gotDirectoryWithAppName) { // If app named fodler was top level in the zip file
-                zip.extractEntryTo(app_name + "/", userAppsLocalPathTo(), true, true);
-            } else {
-                zip.extractAllTo(app_path, true);
-            }
             callback(null)
 
         } catch ( e ) {
+          console.warn(e)
             callback(helpers.invalid_data("error extracting from zip file "+JSON.stringify(e) , "file_handler", exports.version, "extractZippedAppFiles"));
         }
     }
@@ -400,7 +398,7 @@ exports.partPathToUserAppFiles = function(app_name, fileName) {
     let partialPath = (freezr_environment && freezr_environment.userDirParams && freezr_environment.userDirParams.userRoot)? (freezr_environment.userDirParams.userRoot + path.sep):""
     partialPath = path.sep + partialPath + 'userapps'
     if (helpers.startsWith(fileName,"./")) return partialPath+fileName.slice(1);
-    return partialPath + path.sep + app_name + (fileName? '/'+fileName: '') ;
+    return partialPath + (app_name? (path.sep + app_name):'') + (fileName? '/'+fileName: '') ;
 }
 exports.check_app_config = function(app_config, app_name, app_version, flags){
     // onsole.log("check_app_config "+app_name+" :"+JSON.stringify(app_config));
@@ -592,12 +590,11 @@ var userAppsLocalPathTo = function(partialUrl) {
 
     //onsole.log("userAppsLocalPathTo "+partialUrl)
     if (custom_environment) { // todo clean up - make sure custom env is needed
-        console.warn("SNBH - tdodo - review - "+partialUrl)
-        return partialUrl
-    } else {
-        return exports.systemPathTo(partialUrl);
+        console.warn("SNBH - "+partialUrl)
     }
+    return exports.systemPathTo(partialUrl);
 }
+
 
 
 // MAIN LOAD PAGE

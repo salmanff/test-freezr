@@ -2,7 +2,7 @@
 
 
 
-freezr.initPageScripts = function() { 
+freezr.initPageScripts = function() {
 	console.log("oauth_start_oauth fragments")
 	console.log(fragments);
 	console.log(fragments.sender+ " vs " + document.referrer)
@@ -14,10 +14,11 @@ freezr.initPageScripts = function() {
 		showError("Error - Missing source")
 	} else if (!fragments.sender) {
 		showError("Error - Missing sender")
-	} else if (fragments.sender.replace("http://","https://") != document.referrer.replace("http://","https://")) {
-		console.log(fragments.sender+ " vs " + document.referrer)
-		showError("Error -  inconsitent sender (oauthor compared to fragements")
-	} else {		
+	} else {
+			if (fragments.sender.replace("http://","https://") != document.referrer.replace("http://","https://")) {
+				console.log("Error -  inconsitent sender (oauthor compared to fragements):"+fragments.sender+ " vs " + document.referrer)
+				showError("Error -  inconsitent sender (oauthor compared to fragements)")
+			}
 	    let options = {
 	      source: fragments.source,
 	      name: fragments.name,
@@ -34,7 +35,7 @@ freezr.initPageScripts = function() {
 	    	const allurl = "https://dropbox.com/oauth2/authorize?response_type=token&state="+jsonString.state+"&client_id="+jsonString.key+"&redirect_uri="+encodeURIComponent(redirect_uri)
 	    	console.log("opening "+allurl)
 	    	window.open(allurl,"_self");
-	      
+
 	    });
 	}
 }
@@ -60,4 +61,3 @@ var showError = function(errorText) {
   var errorBox=document.getElementById("errorBox");
   errorBox.innerHTML= errorText;
 }
-

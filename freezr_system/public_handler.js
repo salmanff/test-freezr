@@ -69,23 +69,29 @@ exports.generatePublicPage = function (req, res) {
     var app_name  = allApps? "info.freezr.public" : req.params.app_name;
     var useGenericFreezrPage = allApps;
 
-    var page_name; page_params = {};
+    let page_name = (req.params && req.params.page)? req.params.page: null;
+    let page_params = {};
 
     file_handler.async_app_config(app_name, req.freezr_environment, function (err, app_config) {
+        if (!page_name && app_config && app_config.public_pages) page_name = firstElementKey(app_config.public_pages);
+        if (page_name && helpers.endsWith(page_name, '.html')) page_name = page_name.slice(0,-5);
         if (allApps) app_config  = ALL_APPS_HMTL_CONFIG;
         if (isRss) app_config = ALL_APPS_RSS_CONFIG;
-        if (err) {
-            helpers.send_failure(res, err, "public_handler", exports.version, "generatePublicPage");
-            //"problem getting app config while accessing public "+ (isCard?"card.":"page.")
-        } else if (!app_config ){
-            err = helpers.error("missing_app_config","app config missing while accessing public "+ (isCard?"card.":"page."))
-            helpers.send_failure(res, err, "public_handler", exports.version, "generatePublicPage");
-            // todo - consider landing on a "missing" page, but fo not redirect to default ppage as it could enter infinite loop
-            // permissions for public access re given in the app_config so no app config means no pubic records
+        if (err || !app_config || !app_config.public_pages ||
+                   (isRss && !app_config.public_pages.allPublicRSS)  ||
+                   (!isRss && (!app_config.public_pages &&
+                              !(app_config.public_pages.allPublicRecords ||
+                                  (app_config.public_pages[page_name] && app_config.public_pages[page_name].html_file))))
+                 ){
 
+            if (err) {helpers.state_error("public_handler", exports.version, "generatePublicPage", err, "Problem getting App Config for ppage on "+app_name ) }
+            if (isCard || isRss || objectOnly){
+              err = helpers.error("missing_app_config","app config missing while accessing public "+ (isCard?"card.":"page."))
+              helpers.send_failure(res, err, "public_handler", exports.version, "generatePublicPage");
+            } else {
+              res.redirect('/ppage?redirect=true&error=nosuchpagefound'+(app_name?("&app_name="+app_name):"")+(page_name?("&page_name="+page_name):"")+(err?("&error=NoAppConfig"):"") )
+            }
         } else { // Main Case
-            page_name   = req.params.page;
-            if (!page_name) page_name = firstElementKey(app_config.public_pages);
             if (isRss) {
                 useGenericFreezrPage = true;
                 page_params = app_config.public_pages.allPublicRSS
@@ -93,7 +99,6 @@ exports.generatePublicPage = function (req, res) {
                 useGenericFreezrPage = true;
                 page_params = app_config.public_pages.allPublicRecords
             } else {
-                if (helpers.endsWith(page_name, '.html')) page_name = page_name.slice(0,-5);
                 page_params = app_config.public_pages[page_name];
             }
             if (!isCard && !objectOnly) {
@@ -657,7 +662,7 @@ exports.dbp_query = function (req, res){
         granted: true,
         shared_with_group: 'public'
     };
-    const VALID_SEARCH_PARAMS = ["_owner","_id","requestee_app"];
+    const VALID_SEARCH_PARAMS = ["data_owner","_owner","_id","requestee_app"];
     VALID_SEARCH_PARAMS.forEach((aParam) => {if (req.query[aParam]) {permission_attributes[aParam] = req.query[aParam].toLowerCase()}})
 
     // note conflict if have app_name and requestee_app and req.param
@@ -911,7 +916,10 @@ var recheckPermissionExists = function(env_params, permission_record, freezr_env
         } else if (!permission_model){
             cb(helpers.app_data_error(exports.version, "recheckPermissionExists", permission_record.requestee_app, "missing or removed app_config"));
         } else {
-            db_handler.permission_by_owner_and_permissionName (env_params, permission_record._owner, permission_record.requestor_app, permission_record.requestee_app, permission_record.permission_name, cb)
+            console.log("permission_record")
+            console.log(permission_record)
+            if (!permission_record.data_owner && permission_record._owner!="freezr_admin") permission_record.data_owner=permission_record._owner; // fixing legacy
+            db_handler.permission_by_owner_and_permissionName (env_params, permission_record.data_owner, permission_record.requestor_app, permission_record.requestee_app, permission_record.permission_name, cb)
         }
     },
         /* from setObjectAccess for permission_record

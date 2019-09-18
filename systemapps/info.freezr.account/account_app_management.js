@@ -1,4 +1,4 @@
-// copied from register page - need to customize to change password
+// account app Management
 
 var doShowDevoptions = false;
 var userHasIntiatedAcions = false;
@@ -13,6 +13,10 @@ freezr.initPageScripts = function() {
     }
   });
 
+  document.getElementById("appUrl").addEventListener('keyup', function() {
+    document.getElementById("appNameFromUrl").innerText = getAppFromUrl(document.getElementById("appUrl").innerText)
+  })
+
   if (!freezr_user_is_admin) {
     setTimeout(function(){
       document.getElementById("button_showDevOptions").style.display="none";
@@ -21,6 +25,7 @@ freezr.initPageScripts = function() {
   if (freezr_user_is_admin && window.location.search.indexOf("dev=true")>0) doShowDevoptions = true;
   showDevOptions();
 }
+
 
 
 var showDevOptions = function(){
@@ -85,20 +90,48 @@ var buttons = {
     } else {
       var uploadData = new FormData();
       uploadData.append('file', file);
-      var url = "/v1/account/upload_app_zipfile.json";
-      var theEl = document.getElementById(file.name);
-      if (!theEl || confirm("This app exists. Do you want to replace it with the uplaoded files?")) {
+      uploadData.append('app_name', app_name);
+      var url = "/v1/account/app_install_from_zipfile.json";
+      //var theEl = document.getElementById(file.name);
+      //if (!theEl || confirm("This app exists. Do you want to replace it with the uplaoded files?")) {
         freezer_restricted.menu.resetDialogueBox(true);
         if (file.size > 500000) document.getElementById("freezer_dialogueInnerText").innerHTML = "<br/>You are uploading a large file. This might take a little while. Please be patient.<br/>"+document.getElementById("freezer_dialogueInnerText").innerHTML
         freezer_restricted.connect.send(url, uploadData, function(returndata) {
             var d = freezr.utils.parse(returndata);
+            console.log("Got retiurn data on uopload file ")
+            console.log(d)
             if (d.err) {
-              document.getElementById("freezer_dialogueInnerText").innerHTML = "<br/>"+JSON.stringify(d.err);
+              writeErrorsToFreezrDialogue(d)
             } else{
-              ShowAppUploadErrors(d,uploadSuccess);
+              ShowAppUploadErrors(d.flags,uploadSuccess);
             }
           }, "PUT", null);
-      }
+      //}
+    }
+  },
+  'addAppViaUrl': function() {
+    userHasIntiatedAcions = true;
+    let app_url = document.getElementById('appUrl').innerText;
+    let app_name= document.getElementById("appNameFromUrl").innerText
+
+    if (!app_url) {
+        showError("Please enter a url to a zip file");
+    } else if (app_url == "https://github.com/user/repo"){
+      showError("Please enter an actual github user and repository or point to a zip file url.");
+    } else if (!valid_app_name(app_name)) {
+      showError("Invalid app name - please correct the app name")
+    } else {
+      app_url = normliseGithubUrl(app_url)
+      freezer_restricted.menu.resetDialogueBox(true);
+      freezer_restricted.connect.ask('/v1/account/app_install_from_url.json', {'app_url':app_url,'app_name':app_name }, function(returndata) {
+          console.log(returndata)
+          var d = freezr.utils.parse(returndata);
+          if (d.err) {
+            writeErrorsToFreezrDialogue(d)
+          } else{
+            ShowAppUploadErrors(d.flags,uploadSuccess);
+          }
+      })
     }
   },
   'updateApp': function(args) {
@@ -115,7 +148,7 @@ var buttons = {
         if (d.err) {
           if (document.getElementById("freezer_dialogueInnerText")) document.getElementById("freezer_dialogueInnerText").innerHTML= "<br/>"+JSON.stringify(d.err);
         } else {
-          ShowAppUploadErrors(d,showDevOptions)
+          ShowAppUploadErrors(d.flags,showDevOptions)
         }
         buttons.updateAppList();
     })
@@ -164,15 +197,32 @@ var buttons = {
   }
 
 }
+
+const normliseGithubUrl = function (aUrl){
+  if (startsWith(aUrl, "https://github.com/") && (aUrl.match(/\//g) || []).length==4 && !endsWith(aUrl,".zip") ) {
+    aUrl = aUrl+"/archive/master.zip"
+  }
+  return aUrl
+}
+
 var ShowAppUploadErrors = function (theData,callFwd) {
   freezr.utils.getHtml("uploaderrors.html", null, function(theHtml) {
     var theEl = document.getElementById("freezer_dialogueInnerText");
-    theEl.innerHTML = Mustache.to_html( theHtml,theData );
+    try {
+      console.log("theHtml",theHtml)
+      console.log("theData",theData)
+      theEl.innerHTML = Mustache.to_html( theHtml,theData );
+      console.log("done")
+    } catch(e) {
+      console.warn("mustache failed",e)
+      theEl.innerHTML = JSON.stringify(theData);
+    }
     if (callFwd) callFwd();
   })
 }
 
 var uploadSuccess = function() {
+  console.log("uploadSuccess")
   buttons.updateAppList();
   //document.getElementById("freezer_dialogue_extra_title").innerHTML="Finalize Installation and Launch'."
   //document.getElementById("freezer_dialogue_extra_title").onclick=function() {buttons.goto}
@@ -226,6 +276,19 @@ var showError = function(errorText) {
   },5000)}
 }
 
+const writeErrorsToFreezrDialogue = function(data){
+  const el = document.getElementById("freezer_dialogueInnerText");
+  el.innerHTML = "<br/><h1>Error: Could not install app</h1><br/>"
+
+  if (data.flags && data.flags.errors){
+    data.flags.errors.forEach((aflag) => {
+      el.innerHTML+= aflag.text+" ("+aflag.function+") <br/>"
+    })
+  }
+
+  if (data.err) el.innerHTML += "<br/>("+JSON.stringify(data.err)+")";
+}
+
 var valid_app_name = function(app_name) {
         if (!app_name) return false;
         if (app_name.length<1) return false;
@@ -245,7 +308,7 @@ var valid_app_name = function(app_name) {
         if (app_segements.length <3) return false;
         return true;
     }
-valid_filename = function (fn) {
+var valid_filename = function (fn) {
         var re = /[^\.a-zA-Z0-9-_ ]/;
         // @"^[\w\-. ]+$" http://stackoverflow.com/questions/11794144/regular-expression-for-valid-filename
         return typeof fn == 'string' && fn.length > 0 && !(fn.match(re) );
@@ -266,3 +329,16 @@ var starts_with_one_of = function(thetext, stringArray) {
         return false;
     }
 const SYSTEM_APPS = ["info.freezr.account","info.freezr.admin","info.freezr.public","info.freezr.permissions","info.freezr.posts"];
+function getAppFromUrl (aUrl){
+  let app_name = aUrl
+  if (startsWith(aUrl, "https://github.com/") ) {
+    app_name = app_name.replace("https://github.com/","")
+    app_name = app_name.slice(app_name.indexOf("/")+1)
+    if (app_name.indexOf("/")>-1) app_name = app_name.slice(0,app_name.indexOf("/"))
+  } else {
+    app_name = app_name.slice(app_name.lastIndexOf("/")+1)
+    if (app_name.indexOf(".zip")>-1) app_name = app_name.slice(0, app_name.indexOf(".zip"))
+  }
+  //onsole.log("fetching from ",aUrl)
+  return app_name
+}

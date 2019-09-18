@@ -66,6 +66,7 @@ freezr.db.getById = function(data_object_id, options, callback ) {
   // get a specific object by object id
   // options are collection_name, permission_name
   if (!data_object_id) {callback({"error":"No id sent."});}
+  if (!options) options={}
   var requestee_app   = (!options || !options.requestee_app)? freezr_app_name: options.requestee_app;
   var collection_name = (options && options.collection_name)? options.collection_name : "main";
   var permission_name = (options && options.permission_name)? options.permission_name : "me";
@@ -670,7 +671,7 @@ freezer_restricted.permissions= {};
 
     var innerElText = document.getElementById('freezer_dialogueInnerText');
 
-    //onsole.log("ALL permissions are "+JSON.stringify(returnPermissions) );
+    //onsole.log("ALL permissions are ",returnPermissions);
 
     document.getElementById('freezer_dialogueOuter').style.display="block";
     freezer_restricted.menu.addLoginInfoToDialogue('freezer_dialogueInnerText');
@@ -755,9 +756,9 @@ freezer_restricted.permissions= {};
         detailText.innerHTML  = other_app? ("The app, <b style='color:purple;'>"+permission_object.requestor_app+"</b>,") : "This app"
         detailText.innerHTML += (buttText=="Accept"? " wants to be able to " : " is able to ")
         if (type == "db_query") {
-          detailText.innerHTML += access_word + ": "+(permission_object.return_fields? (permission_object.return_fields.join(", ")) : "ERROR") + " with the following groups: "+(permission_object.sharable_groups? permission_object.sharable_groups.join(" "): "None")+".<br/>";
+          detailText.innerHTML += access_word + ": "+(permission_object.return_fields? (permission_object.return_fields.join(", ")) : "data")+" from the collection : "+(permission_object.collection? permission_object.collection:"ERROR") + " with the following groups: "+(permission_object.sharable_groups? permission_object.sharable_groups.join(" "): "None")+".<br/>";
         } else if (type == "folder_delegate") {
-          detailText.innerHTML +=  access_word + " all files in these folders : "+ (permission_object.sharable_folders? permission_object.sharable_folders.join(", "):"ERROR" ) +" with "+(permission_object.sharable_groups? permission_object.sharable_groups.join(" "): "None")+".<br/>";
+          detailText.innerHTML +=  access_word + " all files in these folders : "+ (permission_object.sharable_folders? permission_object.sharable_folders.join(", "):"folders" ) +" with "+(permission_object.sharable_groups? permission_object.sharable_groups.join(" "): "None")+".<br/>";
         } else if (type == "field_delegate") {
           detailText.innerHTML += access_word+ " all data records from the collection : "+(permission_object.collection? permission_object.collection:"ERROR")+" according to these fields:"+ (permission_object.sharable_fields? permission_object.sharable_fields.join(", "):"ERROR" ) +" with "+(permission_object.sharable_groups? permission_object.sharable_groups.join(" "): "None")+".<br/>";
         } else if (type == "object_delegate") {
@@ -789,7 +790,6 @@ freezer_restricted.permissions= {};
             innerElText.appendChild(titleDiv);
           }
       }
-
 
       if (groupedPermissions.thisAppToOtherApps.length + groupedPermissions.outside_scripts.length + groupedPermissions.thisApptoThisAppGranted.length + groupedPermissions.thisApptoThisAppAsked.length +groupedPermissions.thisApptoThisAppDenied.length + groupedPermissions.thisApptoThisAppOutDated.length+ groupedPermissions.folder_delegates.length+ groupedPermissions.field_delegates.length == 0) {
         writePermissions(null, [], "", null, 'This app is not asking for any sharing permissions.');

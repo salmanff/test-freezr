@@ -16,6 +16,7 @@
     "comment-json": "1.x",
     "cookie-parser": "1.x",
     "cookie-session": "1.x",
+    "dropbox": "^2.5.4",
     "express": "4.x",
     "express-session": "1.x",
     "mongodb": "3.0.x",
@@ -23,17 +24,18 @@
     "multer": "1.x",
     "mustache": "^2.3.0",
     "nedb": "^1.8.0",
-    "dropbox": "^2.5.4"
+    "request": "^2.88.0"
   },
   "scripts": {
-    "test": "./node_modules/mocha/bin/mocha"
+    "test": "./node_modules/mocha/bin/mocha",
+    "start": "node server.js"
   },
   "optional_dependencies": {
-    "explanation": "Cut and paste these above if you want to use the specific technologies"
+    "explanation": "Cut and paste these above if you want to use the specific technologies",
+    "cypress": "^3.4.1"
   },
   "devDependencies": {
     "chai": "^4.2.0",
-    "cypress": "^3.4.1",
     "mocha": "^6.1.4"
   }
 }

@@ -176,7 +176,7 @@ exports.db_update = function (env_params, appcollowner, idOrQuery, updates_to_en
       }
     })
 }
-exports.update_record_by_id = function (env_params, appcollowner, id, updates_to_entity, cb) {
+exports.replace_record_by_id = function (env_params, appcollowner, id, updates_to_entity, cb) {
   // Assumes all fields are being replaced including
   // no options
   get_coll(appcollowner.app_name, appcollowner.collection_name, (err, theCollection) =>{
