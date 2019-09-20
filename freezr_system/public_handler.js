@@ -33,16 +33,23 @@ const ALL_APPS_HMTL_CONFIG = { // html and configuration for generic public page
     },
 
     genericHTMLforRecord = function(record) {
-        const RECORDS_NOT_SHOW = ["_accessible_By","_date_Created","_date_Modified","_date_Published"]
+        const RECORDS_NOT_SHOW = ["_accessible_By","_date_Created","_date_Modified","_date_Accessibility_Mod","_date_Published","_owner", "_app_name","_permission_name","_collection_name","_id"]
         var text = "<div class='freezr_public_genericCardOuter freezr_public_genericCardOuter_overflower'>"
         text+= '<div class="freezr_public_app_title">'+record._app_name+"</div>";
         text+= '<br><div class="freezr_public_app_title">The developer has not defined a format for this record.</div><br>';
         text += "<table>"
         for (var key in record) {
             if (Object.prototype.hasOwnProperty.call(record, key) && RECORDS_NOT_SHOW.indexOf(key)<0) {
-                text+= "<tr style='width:100%; font-size:12px; overflow:normal'><td style='width:100px'>"+key +": </td><td>"+((typeof record[key] ==="string")? record[key] : JSON.stringify(record[key]) )+"</td></tr>"
-            };
+              // "_date_Published","_owner":"publisher", "_app_name"
+              text+= "<tr style='width:100%; font-size:12px; overflow:normal'><td style='width:100px'>"+key +": </td><td>"+((typeof record[key] ==="string")? record[key] : JSON.stringify(record[key]) )+"</td></tr>"
+            }
         }
+        text+= "<tr style='width:100%; font-size:12px; overflow:normal'><td style='width:100px'>"+" </td><td>"+"</td></tr>"
+        text+= "<tr style='width:100%; font-size:12px; overflow:normal'><td style='width:100px'>"+"Published by" +": </td><td>"+record._owner+"</td></tr>"
+        let theDate = new Date(record._date_Published || record._date_Modified)
+        text+= "<tr style='width:100%; font-size:12px; overflow:normal'><td style='width:100px'>"+" on (date) " +": </td><td>"+theDate.toLocaleDateString()+"</td></tr>"
+        text+= "<tr style='width:100%; font-size:12px; overflow:normal'><td style='width:100px'>"+" with app " +": </td><td>"+record._app_name+"</td></tr>"
+
         text+="</table>"
         text+="</div>"
         return text;
