@@ -916,8 +916,8 @@ var recheckPermissionExists = function(env_params, permission_record, freezr_env
         } else if (!permission_model){
             cb(helpers.app_data_error(exports.version, "recheckPermissionExists", permission_record.requestee_app, "missing or removed app_config"));
         } else {
-            console.log("permission_record")
-            console.log(permission_record)
+            //onsole.log("permission_record")
+            //onsole.log(permission_record)
             if (!permission_record.data_owner && permission_record._owner!="freezr_admin") permission_record.data_owner=permission_record._owner; // fixing legacy
             db_handler.permission_by_owner_and_permissionName (env_params, permission_record.data_owner, permission_record.requestor_app, permission_record.requestee_app, permission_record.permission_name, cb)
         }

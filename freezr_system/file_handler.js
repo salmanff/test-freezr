@@ -172,7 +172,10 @@ exports.extractZippedAppFiles = function(zipfile, app_name, originalname, env_pa
 
             zipEntries.forEach(function(zipEntry) {
               if (!zipEntry.isDirectory && !helpers.startsWith(zipEntry.entryName, "__MACOSX")){
-                targetpath = zipEntry.entryName.replace(entryname, "")
+                let targetpath = zipEntry.entryName
+                if (helpers.startsWith(zipEntry.entryName,"/")) targetpath = targetpath.slice(1)
+                if (helpers.startsWith(zipEntry.entryName,app_name)) targetpath = targetpath.slice(targetpath.indexOf("/")+1)
+                //onsole.log("zipEntry.entryName: "+zipEntry.entryName+ " targetpath: "+targetpath)
                 targetpath = targetpath.lastIndexOf("/")>0? ("/"+targetpath.slice(0,targetpath.lastIndexOf("/"))) :""
                 zip.extractEntryTo(zipEntry.entryName, (app_path+targetpath), false, true);
               }

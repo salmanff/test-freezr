@@ -312,8 +312,8 @@ exports.extractZippedAppFiles = function(zipfile, app_name, originalname, env_pa
     var zipEntries = zip.getEntries(); // an array of ZipEntry records
     var gotDirectoryWithAppName = null;
     zipEntries.forEach(function(zipEntry) {
-        // This is for case of compressing with mac, which also includes the subfolder - todo: review quirks with windows
-        if (!gotDirectoryWithAppName && zipEntry.isDirectory && zipEntry.entryName == app_name+"/") gotDirectoryWithAppName= app_name+"/";
+        // This is for case of compressing a zip file which includes a root folder with the app names
+        if (!gotDirectoryWithAppName && zipEntry.isDirectory && helpers.startsWith(zipEntry.entryName, app_name) && zipEntry.entryName.indexOf("/")>1) gotDirectoryWithAppName= zipEntry.entryName.slice(0,zipEntry.entryName.indexOf("/"+1));
         if (!gotDirectoryWithAppName && zipEntry.isDirectory && zipEntry.entryName == originalname+"/") {gotDirectoryWithAppName= originalname+"/";}
     });
     //onsole.log("env.extractZippedAppFiles "+app_name+" gotDirectoryWithAppName "+ gotDirectoryWithAppName )
