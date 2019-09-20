@@ -791,7 +791,7 @@ freezer_restricted.permissions= {};
           }
       }
 
-      if (groupedPermissions.thisAppToOtherApps.length + groupedPermissions.outside_scripts.length + groupedPermissions.thisApptoThisAppGranted.length + groupedPermissions.thisApptoThisAppAsked.length +groupedPermissions.thisApptoThisAppDenied.length + groupedPermissions.thisApptoThisAppOutDated.length+ groupedPermissions.folder_delegates.length+ groupedPermissions.field_delegates.length == 0) {
+      if (groupedPermissions.thisAppToOtherApps.length + groupedPermissions.outside_scripts.length + groupedPermissions.thisApptoThisAppGranted.length + groupedPermissions.thisApptoThisAppAsked.length +groupedPermissions.thisApptoThisAppDenied.length + groupedPermissions.thisApptoThisAppOutDated.length+ groupedPermissions.folder_delegates.length+ groupedPermissions.object_delegates.length + groupedPermissions.field_delegates.length == 0) {
         writePermissions(null, [], "", null, 'This app is not asking for any sharing permissions.');
       }
       writePermissions("object_delegate", groupedPermissions.object_delegates, null, 'This app is asking for permission to be able to automatically share individual records or FILES with others.');
