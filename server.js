@@ -31,7 +31,7 @@ var  db_handler = require('./freezr_system/db_handler.js'),
     public_handler = require('./freezr_system/public_handler.js');
 
 //console
-var tester = require('./freezr_system/environment/db_env_nedb.js');
+//var tester = require('./freezr_system/environment/file_env_dropbox.js');
 
 // var tester = require('./freezr_system/environment/db_env_nedb.js');
 
@@ -368,7 +368,7 @@ async.waterfall([
           cb(null)
         } else {
           // todo later: consider also case where file is corrupt - here we assume it doesnt exist and try other options
-          console.log("1. Note - no local copy of freezr_environment foun")
+          console.log("1. Note - no local copy of freezr_environment found")
           environment_defaults.autoConfigs((err, autoconfigs) => {
             if (err) {
               console.warn("1 - Local environment file missing and ERROR getting Autoconfigured settings")
@@ -463,7 +463,7 @@ async.waterfall([
         freezrStatus.can_write_to_user_folder = err? false:true;
         if (freezrStatus.can_write_to_user_folder && freezr_environment.env_on_db_only ){
           // try re-writing freezr_environment.js on local environment  if only existed on the db
-          fs.writeFile(file_handler.fullLocalPathToUserFiles("userfiles","freezr_environment.js"), false, freezr_environment, "exports.params=" + JSON.stringify(freezr_environment), function(err) {
+          fs.writeFile(file_handler.fullLocalPathToUserFiles("userfiles","freezr_environment.js"), "exports.params=" + JSON.stringify(freezr_environment), function(err) {
             // only happens if using local file system and file has been corrupted. Other wise, if non local fs, then error is normal, so it is not caught
               cb(null);
           })

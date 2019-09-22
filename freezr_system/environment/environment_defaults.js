@@ -102,6 +102,27 @@ var autoDbParams = function(callback) {
               }
               cb(null)
           })
+      } else if (process && process.env && process.env.MONGO_STR){
+        otherOptions.MONGO_EXTERNAL.vars_exist=true
+        otherOptions.MONGO_EXTERNAL.params = {
+                dbtype: "mongodb", // should be Mondodb
+                connectionString : process.env.MONGO_STR
+          }
+          db_handler.re_init_environment_sync({dbParams:otherOptions.MONGO_EXTERNAL.params})
+          db_handler.check_db({dbParams:otherOptions.MONGO_EXTERNAL.params}, (err,env_on_db)=>{
+              if (!err) {
+                if (env_on_db) otherOptions.MONGO_EXTERNAL.env_on_db=env_on_db
+                otherOptions.MONGO_EXTERNAL.functioning = true;
+                haveWorkingDb=true;
+                main_db_params = otherOptions.MONGO_EXTERNAL.params
+              } else {
+                console.warn("GOT ERR FOR MONGO_EXTERNAL")
+              }
+              cb(null)
+          })
+
+
+
       } else {
         cb(null)
       }
@@ -241,10 +262,10 @@ var autoDbParams = function(callback) {
       cb(null)
     }],
     function (err) {
-      console.log("AUTO DB Options")
-      console.log(otherOptions)
-      console.log("Current DB (main_db_params):")
-      console.log(main_db_params)
+      //onsole.log("AUTO DB Options")
+      //onsole.log(otherOptions)
+      //onsole.log("Current DB (main_db_params):")
+      //onsole.log(main_db_params)
       if (err) console.warn(err)
       main_db_params.otherOptions = JSON.parse(JSON.stringify(otherOptions))
       callback(null, main_db_params)

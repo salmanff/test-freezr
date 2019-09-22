@@ -307,6 +307,7 @@ var doParseConfig = function(app_name, app_config, callback) {
 	}
 }
 exports.extractZippedAppFiles = function(zipfile, app_name, originalname, env_params, callback){
+	//onsole.log("in dropbox extractZippedAppFiles")
 	var AdmZip = require('../forked_modules/adm-zip/adm-zip.js');
     var zip = new AdmZip(zipfile); //"zipfilesOfAppsInstalled/"+app_name);
     var zipEntries = zip.getEntries(); // an array of ZipEntry records
@@ -335,7 +336,7 @@ exports.extractZippedAppFiles = function(zipfile, app_name, originalname, env_pa
 		}
 		if (dowrite) {
 			if (gotDirectoryWithAppName && helpers.startsWith(file_name, gotDirectoryWithAppName) ) {
-				file_name = "userapps/"+app_name+"/"+file_name.substring(gotDirectoryWithAppName.length);
+				file_name = "userapps/"+app_name+"/"+file_name.substring(gotDirectoryWithAppName.length+1);
 			} else if (gotDirectoryWithAppName) {
 				dowrite = false
 			} else {
@@ -343,7 +344,6 @@ exports.extractZippedAppFiles = function(zipfile, app_name, originalname, env_pa
 			}
 		}
 		if (dowrite) {
-			//onsole.log("writing user file "+file_name)
 			exports.writeUserFile (file_name, null, {fileOverWrite:true, doNotWriteToCache:true}, null, fakereq, function(err){
 				if (err) helpers.warning("file_env_dropbox", exports.version, "extractZippedAppFiles", "Error writing file "+file_name+" to dropbox" )
 				callfwdback();
