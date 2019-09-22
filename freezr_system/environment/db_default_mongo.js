@@ -246,10 +246,10 @@ const get_coll = function (app_name, collection_name, callback) {
 }
 const get_full_coll_name = function (app_name, collection_name) {
     // gets collection name if unified db is used
-    if (freezr_environment.dbParams.unifiedDbName) {
+    if (freezr_environment.dbParams.unifiedDbName) { //201909 todo and fix (else return app_name + collection_name... so what should uinifieddb return? is it ieven needed?)
         return (app_name+"__"+collection_name)
     } else {
-        return collection_name;
+        return (app_name+"__"+collection_name);
     }
 }
 const dbConnectionString = function(appName) {
