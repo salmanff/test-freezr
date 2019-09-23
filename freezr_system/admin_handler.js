@@ -224,14 +224,19 @@ exports.first_registration = function (req, callback) {
         temp_environment.dbParams.user /* in case user is deleting all dbparams */ &&
         req.freezr_environment.dbParams.pass)
         temp_environment.dbParams.pass = req.freezr_environment.dbParams.pass;
-        // // TODO later  this ismongo specific
+    if (helpers.startsWith(temp_environment.dbParams.connectionString,"mongodb") ) {
+        temp_environment.dbParams.dbtype = "localhost-mongo"
+      } else if (temp_environment.dbParams.host == "localhost" ){
+        temp_environment.dbParams.dbtype = "localhost-mongo"
+      }
+        // // TODO later  all params need to be checked and fleshed out
     //if (temp_environment.dbParams && temp_environment.dbParams.connectionString)
     if (req.body.externalFs && req.body.externalFs.name && req.body.externalFs.name!="glitch.com") temp_environment.userDirParams = req.body.externalFs ;
     if (!temp_environment.userDirParams.access_token &&
         temp_environment.userDirParams.name &&
         req.freezr_environment.userDirParams.access_token )
         temp_environment.userDirParams.access_token = req.freezr_environment.userDirParams.access_token;
-
+    if (!temp_environment.userDirParams.name) temp_environment.userDirParams.name="local"
     if (req.freezr_environment.freezr_is_setup && !req.session.logged_in_user_id) {
         callback(reg_auth_fail("System is already initiated.", "auth-initedAlready"));
     } else if (!uid)

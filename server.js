@@ -3,7 +3,7 @@ const VERSION = "0.0.122";
 
 
 // INITALISATION / APP / EXPRESS
-console.log("=========================  VERSION September 2019  =======================")
+console.log("=========================  VERSION September 23 2019  =======================")
 const LISTEN_TO_LOCALHOST_ON_LOCAL = true; // for local development - set to true to access local site at http://localhost:3000, and false to access it at your local ip address - eg http://192.168.192.1:3000 (currently not working)
 
 
@@ -277,8 +277,6 @@ const add_app_uses = function(){
                 if (err) {
                     helpers.send_auth_failure(res, "admin_handler", exports.version,"change_main_prefs",err.message, err.errCode);
                 } else {
-                    console.log("new freezr_prefs returns")
-                    console.log(returns)
                     freezr_prefs = returns;
                     helpers.send_success(res, returns);
                 }
@@ -305,7 +303,6 @@ const add_app_uses = function(){
 
     // default redirects
         function getPublicUrlFromPrefs () {
-            console.log(freezr_prefs)
             if (!freezr_prefs || !freezr_prefs.redirect_public) return "/account/login";
             if (!freezr_prefs.public_landing_page) return "/ppage";
             return "/papp/"+freezr_prefs.public_landing_page;
@@ -531,11 +528,9 @@ async.waterfall([
     function (err) {
         if (err) console.log(" =================== Got err on start ups =================== ")
         console.log("Startup checks complete.")
-        //onsole.log("freezr_prefs: ")
-        //onsole.log(freezr_prefs)
+        //onsole.log("freezr_prefs: ", freezr_prefs)
         console.log("freezrStatus: ")
         console.log(freezrStatus)
-        //onsole.log(freezr_environment)
         if (err) {
             helpers.warning("server.js", exports.version, "startup_waterfall", "STARTUP ERR "+JSON.stringify(err) )
         }
@@ -543,5 +538,8 @@ async.waterfall([
         var theport = (process && process.env && process.env.PORT)? process.env.PORT : freezr_environment.port;
         app.listen(theport) //, freezr_environment.ipaddress)
         helpers.log (null,"Going to listen on port "+freezr_environment.port)
+        //onsole.log(freezr_environment)
+        console.log("Database   : "+freezr_environment.dbParams.dbtype || "tbd")
+        console.log("File System: "+(freezr_environment.userDirParams.name || "local"))
     }
 )

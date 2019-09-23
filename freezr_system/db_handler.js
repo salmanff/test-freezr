@@ -502,6 +502,7 @@ exports.remove_user_app = function (env_params, user_id, app_name, callback){
       callback)
 }
 exports.get_or_set_user_app_code = function (env_params, user_id,app_name, callback){
+    //onsole.log("get_or_set_user_app_code for "+user_id)
     var app_code = null, new_app_code=null;
     const appcollowner = {
       app_name:'info_freezer_admin',

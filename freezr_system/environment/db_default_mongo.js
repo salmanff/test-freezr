@@ -183,7 +183,15 @@ exports.replace_record_by_id = function (env_params, appcollowner, id, updates_t
     if(err) {
       callback(exports.state_error ("db_default_mongo", exports.version, "db_update", err ))
     } else {
-      theCollection.update({_id: id }, {$set: updates_to_entity}, {safe: true, multi:false }, cb);
+      theCollection.update({_id: id }, {$set: updates_to_entity}, {safe: true, multi:false }, (err, result) =>{
+        if (err){
+          cb(err)
+        } else if (result && result.result && result.result.n && result.result.n == 1) { // Also nModified=1
+          cb(null, {entity:updates_to_entity})
+        } else {
+          cb(new Error("error updating record"))
+        }
+      });
     }
   })
 }
@@ -249,7 +257,7 @@ const get_full_coll_name = function (app_name, collection_name) {
     if (freezr_environment.dbParams.unifiedDbName || freezr_environment.dbParams.connectionString) {
         return (app_name+"__"+collection_name)
     } else {
-        return (app_name);
+        return collection_name
     }
 }
 const dbConnectionString = function(appName) {
