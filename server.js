@@ -1,5 +1,5 @@
 // freezr.info - nodejs system files - main file: server.js
-const VERSION = "0.0.122";
+const VERSION = "0.0.133";
 
 
 // INITALISATION / APP / EXPRESS
@@ -68,7 +68,7 @@ var serveAppFile = function(req, res, next) {
     if (helpers.startsWith(fileUrl,'/app_files/')) { fileUrl = fileUrl.replace('/app_files/','app_files/')}
     else if (helpers.startsWith(fileUrl,'/apps/')) { fileUrl = fileUrl.replace('/apps/','app_files/')}
 
-    if (fileUrl.indexOf('?')>1) { fileUrl = fileUrl.substr(0,fileUrl.indexOf('?'));} // solving slight problem when node.js adds a query param to some fetches
+    if (fileUrl.indexOf('?')>1) { fileUrl = fileUrl.substr(0,fileUrl.indexOf('?'));} // solving slight problem when node.js adds a § param to some fetches
 
     //onsole.log( (new Date())+" serveAppFile - "+fileUrl);
 
@@ -128,7 +128,8 @@ function requireAdminRights(req, res, next) {
 }
 var userDataAccessRights = function(req, res, next) {
     //onsole.log("userDataAccessRights sess "+(req.session?"Y":"N")+"  loggin in? "+req.session.logged_in_user_id+" param id"+req.params.userid);
-    if (freezr_environment.freezr_is_setup && req.session && req.session.logged_in && req.session.logged_in_user_id){
+    //if (freezr_environment.freezr_is_setup && req.session && req.session.logged_in && req.session.logged_in_user_id){
+    if (freezr_environment.freezr_is_setup && req.session && req.header('Authorization') ) {
         req.freezr_environment = freezr_environment;
         req.freezrStatus = freezrStatus;
         visit_logger.record(req, freezr_environment, freezr_prefs, {source:'userDataAccessRights'});
@@ -139,16 +140,29 @@ var userDataAccessRights = function(req, res, next) {
         res.sendStatus(401);
     }
 }
+var userLoggedInRights = function(req, res, next) {
+    //onsole.log("userLoggedInRights sess "+(req.session?"Y":"N")+"  loggin in? "+req.session.logged_in_user_id+" param id"+req.params.userid);
+    //if (freezr_environment.freezr_is_setup && req.session && req.session.logged_in && req.session.logged_in_user_id){
+    if (freezr_environment.freezr_is_setup && req.session && req.session.logged_in_user_id ) {
+        req.freezr_environment = freezr_environment;
+        req.freezrStatus = freezrStatus;
+        visit_logger.record(req, freezr_environment, freezr_prefs, {source:'userLoggedInRights'});
+        next();
+    } else {
+        if (freezr_environment && freezr_environment.freezr_is_setup) helpers.auth_warning("server.js", VERSION, "userLoggedInRights", "Unauthorized attempt to access data "+req.url+" without login ");
+        visit_logger.record(req, freezr_environment, freezr_prefs, {source:'userLoggedInRights', auth_error:true});
+        res.sendStatus(401);
+    }
+}
 function uploadFile(req,res) {
-    req.freezr_server_version = VERSION;
-    req.freezr_environment = freezr_environment;
-    // visit_logger already done via userdatarights
-    upload(req, res, function (err) {
-        if (err) {
-            helpers.send_failure(res, err, "server.js", VERSION, "uploadFile");
-        }
-        app_handler.putData(req,res);
-    })
+  req.freezr_server_version = VERSION;
+  req.freezr_environment = freezr_environment;
+  // visit_logger already done via userdatarights
+  upload(req, res, function (err) {
+    if (err) {
+      helpers.send_failure(res, err, "server.js", VERSION, "uploadFile");
+    } else app_handler.write_data(req,res);
+  })
 }
 function installAppFromZipFile(req,res) {
     req.freezr_server_version = VERSION;
@@ -203,15 +217,6 @@ const add_app_uses = function(){
         app.get('/allmydata/:whattodo/:app_name', appPageAccessRights, app_handler.generateSystemDataPage);
         app.get('/favicon.ico', servePublicAppFile)
 
-    // app files and pages and user files
-        app.get('/v1/db/getbyid/:permission_name/:collection_name/:requestor_app/:source_app_code/:requestee_app/:data_object_id', userDataAccessRights, app_handler.getDataObject); // here request type must be "one"
-        app.get('/v1/userfiles/:permission_name/:collection_name/:requestor_app/:source_app_code/:requestee_app/:user_id/*', userDataAccessRights, app_handler.getDataObject); // collection_name is files
-    // db
-        app.put('/v1/db/upload/:app_name/:source_app_code',userDataAccessRights, uploadFile);
-        app.put('/v1/db/write/:app_name/:source_app_code/:collection', userDataAccessRights, app_handler.putData);
-        app.post('/v1/db/query/:requestor_app/:source_app_code/:requestee_app', userDataAccessRights, app_handler.db_query);
-        app.post('/v1/db/query/:requestor_app/:source_app_code/:requestee_app/:permission_name', userDataAccessRights, app_handler.db_query);
-
     // public
         app.get('/pcard/:user_id/:requestor_app/:permission_name/:app_name/:collection_name/:data_object_id', addVersionNumber, public_handler.generatePublicPage);
         app.get('/pcard/:user_id/:app_name/:collection_name/:data_object_id', addVersionNumber, public_handler.generatePublicPage);
@@ -231,35 +236,36 @@ const add_app_uses = function(){
 
 
     // permissions
-        app.put('/v1/permissions/setobjectaccess/:requestor_app/:source_app_code/:permission_name', userDataAccessRights, app_handler.setObjectAccess);
-        app.put('/v1/permissions/change/:requestee_app/:source_app_code', userDataAccessRights, account_handler.changeNamedPermissions);
+        app.put('/v1/permissions/setobjectaccess/:requestor_app/:source_app_code/:permission_name', userLoggedInRights, app_handler.setObjectAccess);
+        app.put('/v1/permissions/change/:requestee_app/:source_app_code', userLoggedInRights, account_handler.changeNamedPermissions);
         app.get('/v1/permissions/getall/:requestee_app/:source_app_code', userDataAccessRights, account_handler.all_app_permissions);
         // todo & review / redo app.put('/v1/permissions/setfieldaccess/:requestor_app/:source_app_code/:permission_name', userDataAccessRights, app_handler.setFieldAccess);
         // todo & review / redoapp.get('/v1/permissions/getfieldperms/:requested_type/:requestor_app/:source_app_code', userDataAccessRights, app_handler.getFieldPermissions)
 
     // developer utilities
-        app.get('/v1/developer/config/:app_name/:source_app_code',userDataAccessRights, app_handler.getConfig);
-        app.get('/v1/developer/fileListUpdate/:app_name/:source_app_code', userDataAccessRights, app_handler.updateFileList);
-        app.get('/v1/developer/fileListUpdate/:app_name/:source_app_code/:folder_name', userDataAccessRights, app_handler.updateFileList);
+        app.get('/v1/developer/config/:app_name/:source_app_code',userLoggedInRights, app_handler.getConfig);
+        app.get('/v1/developer/fileListUpdate/:app_name/:source_app_code', userLoggedInRights, app_handler.updateFileList);
+        app.get('/v1/developer/fileListUpdate/:app_name/:source_app_code/:folder_name', userLoggedInRights, app_handler.updateFileList);
 
     // account pages
         app.get ('/account/logout', addVersionNumber, account_handler.logout_page);
         app.get ('/account/login', addVersionNumber, account_handler.generate_login_page);
         app.get ('/login', addVersionNumber, account_handler.generate_login_page);
         app.get ('/account/applogin/login/:app_name', addVersionNumber, account_handler.generate_login_page);
-        app.get ('/account/applogin/results', addVersionNumber, account_handler.generate_applogin_results);
         app.get ('/account/:page', appPageAccessRights, account_handler.generateAccountPage);
 
         app.get('/v1/account/ping', addVersionNumber, account_handler.ping);
         app.post('/v1/account/login', addVersionNumber, account_handler.login);
         app.post('/v1/account/applogin', addVersionNumber, account_handler.login);
-        app.post('/v1/account/applogout', addVersionNumber, account_handler.logout);
-        app.put ('/v1/account/changePassword.json', userDataAccessRights, account_handler.changePassword);
-        app.put ('/v1/account/app_install_from_zipfile.json', userDataAccessRights, installAppFromZipFile);
-        app.post ('/v1/account/app_install_from_url.json', userDataAccessRights, addVersionNumber, account_handler.get_file_from_url_to_install_app);
+        app.post('/v1/account/applogout', addVersionNumber, account_handler.app_logout);
+        app.get('/v1/account/generateapppassword', addVersionNumber, account_handler.generate_onetime_app_password);
+        app.put ('/v1/account/changePassword.json', userLoggedInRights, account_handler.changePassword);
+        app.put ('/v1/account/app_install_from_zipfile.json', userLoggedInRights, installAppFromZipFile);
+        app.post ('/v1/account/app_install_from_url.json', userLoggedInRights, addVersionNumber, account_handler.get_file_from_url_to_install_app);
+        app.post ('/v1/account/app_install_blank', userLoggedInRights, addVersionNumber, account_handler.install_blank_app);
 
         app.get('/v1/account/app_list.json', userDataAccessRights, account_handler.list_all_user_apps);
-        app.post('/v1/account/appMgmtActions.json', userDataAccessRights, account_handler.appMgmtActions);
+        app.post('/v1/account/appMgmtActions.json', userLoggedInRights, account_handler.appMgmtActions);
 
 
 
@@ -299,7 +305,22 @@ const add_app_uses = function(){
             })
         });
         app.post('/v1/admin/dbquery/:collection_name', requireAdminRights, admin_handler.dbquery);
-        app.get('/v1/admin/user_list.json', requireAdminRights, admin_handler.list_all_users);
+
+    // CEPS
+        app.post('/ceps/app_token', addVersionNumber, account_handler.login_for_app_token);
+        app.post('/ceps/write/:app_name/', userDataAccessRights, app_handler.write_data);
+        app.post('/ceps/write/:app_name/:collection', userDataAccessRights, app_handler.write_data);
+        app.post('/ceps/write/:app_name/:collection/:user_id', userDataAccessRights, app_handler.write_data);
+        app.post('/ceps/query/:requestor_app', userDataAccessRights, app_handler.db_query);
+        // app files and pages and user files
+        app.get('/ceps/get/:requestee_app/:collection_name/:user_id/:data_object_id', userDataAccessRights, app_handler.getDataObject);
+        app.get('/ceps/get/:requestee_app/:collection_name/:data_object_id', userDataAccessRights, app_handler.getDataObject);
+        app.get('/ceps/userfile/:requestee_app/:user_id/*', userDataAccessRights, app_handler.getDataObject);
+        app.put('/ceps/upload/:app_name',userDataAccessRights, uploadFile);
+                // "/ceps/userfile/"+requestee_app+"/"+fileId+(permission_name?("?permission_name"=permission_name):"");
+            app.get('/v1/userfiles/:permission_name/:collection_name/:requestor_app/:source_app_code/:requestee_app/:user_id/*', userDataAccessRights, app_handler.getDataObject); // collection_name is files
+        // db
+
 
     // default redirects
         function getPublicUrlFromPrefs () {

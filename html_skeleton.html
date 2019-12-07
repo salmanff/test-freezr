@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>{{PAGE_TITLE}}</title>
- 
+
   <!-- Meta -->
   <meta http-equiv="content-type" content="text/html; charset=utf-8" />
 
@@ -11,17 +11,12 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black">
     <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'nonce-{{FREEEZR-SCRIPT-NONCE}}'; child-src 'none'; object-src 'none'">
 
- 
+
   <!-- Stylesheets -->
   {{CSS_FILES}}
   {{FREEZR_CORE_CSS}}
- 
+
   <!-- javascripts -->
-  {{FREEZR_CORE_JS}}
-  
-  {{SCRIPT_FILES}}
-
-
   <script nonce="{{FREEEZR-SCRIPT-NONCE}}">
     var freezr_app_name = "{{APP_NAME}}";
     var freezr_app_code = "{{APP_CODE}}";
@@ -32,10 +27,11 @@
     var freezr_user_is_admin = {{USER_IS_ADMIN}};
     var freezr_messages = {{MESSAGES}};
     var freezr_server_address = "{{SERVER_NAME}}";
+    let freezr_app_token = null;
 
     {{OTHER_VARIABLES}}
 
-    window.onload = function() { 
+    window.onload = function() {
       if (freezr && freezer_restricted) {
         freezer_restricted.menu.addFreezerDialogueElements();
         if (freezr.initPageScripts) freezr.initPageScripts();
@@ -47,9 +43,12 @@
   </script>
 
 
+    {{FREEZR_CORE_JS}}
+
+    {{SCRIPT_FILES}}
+
 </head>
 
 <body >{{HTML-BODY}}</body>
 
 </html>
-

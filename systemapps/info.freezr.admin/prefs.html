@@ -3,7 +3,7 @@ options:
             script_files = ['./info.freezr.admin/prefs.js'];
             page_title = "freezr.info - Main Preferences";
             css_files = './info.freezr.public/freezr_style.css';
-            initial_query_func = exports.get_main_prefs
+            initial_query_func = get_main_prefs
             break;
 -->
 <div class="freezer_texture_outer">
@@ -18,7 +18,7 @@ options:
       <a href="/account/logout">Log Out</a>
     </div>
 
-    <div class="freezer_dialogueTitle">Freezr.info - Main Preferences</div> 
+    <div class="freezer_dialogueTitle">Freezr.info - Main Preferences</div>
 
     <form name="changePrefs" id="changePrefs">
       <div id="errorBox" class="errorBox"></div>
@@ -34,7 +34,7 @@ options:
         <span style="display:none" id="oldChoice">{{ public_landing_page }}</span>
         <dd>
           <select id="defaultPublicAppId"> <option value=" ">Default Page</option> </select>
-          
+
         <br>
 
         <dt>Re-enter Password:</dt>
@@ -47,6 +47,3 @@ options:
     </form>
   </div>
 </div>
-
-
-

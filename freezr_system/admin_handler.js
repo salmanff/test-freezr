@@ -1,5 +1,5 @@
 // freezr.info - nodejs system files - admin_handler.js
-exports.version = "0.0.123";
+exports.version = "0.0.133";
 
 var helpers = require('./helpers.js'),
     db_handler = require("./db_handler.js"),
@@ -10,122 +10,136 @@ var helpers = require('./helpers.js'),
     file_handler = require('./file_handler.js');
 
 exports.generateAdminPage = function (req, res) {
-    helpers.log(req, "adminPage: "+req.url)
-    // todo - distibguish http & https
-    //onsole.log("??? req.headers.referer.split(':')[0]"+req.headers.referer);
-    //onsole.log("??? req.secure "+req.secure)
-    //onsole.log("??? req.protocol"+req.protocol)
-    var initial_query = '', script_files=null; css_files= null;  page_title= null, initial_query_func= null, page_url = null, other_variables=null;
-    var isPublicPage = helpers.startsWith(req.url,"/admin/public")
-    if (!isPublicPage && !req.params.sub_page) req.params.sub_page = "home"
-    switch(req.params.sub_page) {
-        case "home":
-            page_title = "freezr.info - Admin";
-            css_files = ['./info.freezr.admin/public/firstSetUp.css','./info.freezr.public/freezr_style.css'];
-            break;
-        case "list_users":
-            page_title = "freezr.info - User list";
-            css_files = './info.freezr.public/freezr_style.css';
-            initial_query = {'url':"/v1/admin/user_list.json"};
-            initial_query_func = exports.list_all_users
-            break;
-        case "register":
-            script_files = ['./info.freezr.admin/register.js'];
-            page_title = "freezr.info - Register";
-            css_files = './info.freezr.public/freezr_style.css';
-            break;
-        case "prefs":
-            script_files = ['./info.freezr.admin/prefs.js'];
-            page_title = "freezr.info - Main Preferences";
-            css_files = './info.freezr.public/freezr_style.css';
-            initial_query_func = exports.get_main_prefs
-            break;
-        case "oauth_serve_setup":
-            page_title = "freezr.info - Set up your freezr as an oauth server";
-            css_files = ['oauth_serve_setup.css','./info.freezr.public/freezr_style.css'];
-            script_files = ['oauth_serve_setup.js'];
-            initial_query_func = exports.list_all_oauths;
-            break;
-        // PUBLIC PAGES...
-        case "oauth_start_oauth": //public
-            script_files = ['./info.freezr.admin/public/oauth_start_oauth.js'];
-            page_title = "freezr.info - o-auth - starting process";
-            css_files = './info.freezr.public/freezr_style.css';
-            break;
-        case "oauth_validate_page": //public
-            script_files = ['./info.freezr.admin/public/oauth_validate_page.js'];
-            page_title = "freezr.info - o-auth validating page";
-            css_files = './info.freezr.public/freezr_style.css';
-            break;
-        case "firstSetUp": //public - Note security checks done below
-            page_title = "Freezr Set Up";
-            page_url= 'firstSetUp.html';
-            script_files = ['./info.freezr.admin/public/firstSetUp.js'];
-            css_files = ['./info.freezr.admin/public/firstSetUp.css','./info.freezr.public/freezr_style.css'];
-            var temp_environment = JSON.parse(JSON.stringify(req.freezr_environment) );
-            if (temp_environment.dbParams && temp_environment.dbParams.pass ){
-                temp_environment.dbParams.pass = null;
-                temp_environment.dbParams.has_password = true;
-            };
-            if (temp_environment.dbParams && temp_environment.dbParams.connectionString ){
-                temp_environment.dbParams.connectionString = null;
-                temp_environment.dbParams.has_password = true;
-            };
-            if (temp_environment.userDirParams && temp_environment.userDirParams.access_token) {
-                temp_environment.userDirParams.access_token = null;
-                temp_environment.userDirParams.has_access_token = true;
-            }
-            other_variables = " var freezrServerStatus = "+JSON.stringify(req.freezrStatus)+"; var firstSetUp = "+(req.freezr_environment.freezr_is_setup? "false":"true")+";"+ " var freezr_environment = "+JSON.stringify(temp_environment)+";"
-            break;
-        case "starterror": // public
-            page_title = "Fatal Error (Freezr)",
-            script_files = ['./info.freezr.admin/public/starterror.js'];
-            css_files = './info.freezr.public/freezr_style.css';
-            other_variables = "var startup_errors = "+JSON.stringify(req.freezrStatus);
-            break;
-        default:
-            script_files = ['./info.freezr.admin/'+ req.params.sub_page +'.js'];
-            css_files = ['./info.freezr.admin/freezr_style.css', './info.freezr.admin/'+ req.params.sub_page +'.css'];
-            break;
-    }
+  helpers.log(req, "adminPage: "+req.url)
+  // todo - distibguish http & https
+  //onsole.log("??? req.headers.referer.split(':')[0]"+req.headers.referer);
+  //onsole.log("??? req.secure "+req.secure)
+  //onsole.log("??? req.protocol"+req.protocol)
+  var initial_query = '', script_files=null; css_files= null;  page_title= null, initial_query_func= null, page_url = null, other_variables=null;
+  var isPublicPage = helpers.startsWith(req.url,"/admin/public")
+  if (!isPublicPage && !req.params.sub_page) req.params.sub_page = "home"
+  switch(req.params.sub_page) {
+    case "home":
+      page_title = "freezr.info - Admin";
+      css_files = ['./info.freezr.admin/public/firstSetUp.css','./info.freezr.public/freezr_style.css'];
+      break;
+    case "list_users":
+      page_title = "freezr.info - User list";
+      css_files = './info.freezr.public/freezr_style.css';
+      initial_query = {'url':"/v1/admin/user_list.json"};
+      initial_query_func = list_all_users
+      break;
+    case "register":
+      script_files = ['./info.freezr.admin/register.js'];
+      page_title = "freezr.info - Register";
+      css_files = './info.freezr.public/freezr_style.css';
+      break;
+    case "prefs":
+      script_files = ['./info.freezr.admin/prefs.js'];
+      page_title = "freezr.info - Main Preferences";
+      css_files = './info.freezr.public/freezr_style.css';
+      initial_query_func = get_main_prefs
+      break;
+    case "oauth_serve_setup":
+      page_title = "freezr.info - Set up your freezr as an oauth server";
+      css_files = ['oauth_serve_setup.css','./info.freezr.public/freezr_style.css'];
+      script_files = ['oauth_serve_setup.js'];
+      initial_query_func = list_all_oauths;
+      break;
+    // PUBLIC PAGES...
+    case "oauth_start_oauth": //public
+      script_files = ['./info.freezr.admin/public/oauth_start_oauth.js'];
+      page_title = "freezr.info - o-auth - starting process";
+      css_files = './info.freezr.public/freezr_style.css';
+      break;
+    case "oauth_validate_page": //public
+      script_files = ['./info.freezr.admin/public/oauth_validate_page.js'];
+      page_title = "freezr.info - o-auth validating page";
+      css_files = './info.freezr.public/freezr_style.css';
+      break;
+    case "firstSetUp": //public - Note security checks done below
+      page_title = "Freezr Set Up";
+      page_url= 'firstSetUp.html';
+      script_files = ['./info.freezr.admin/public/firstSetUp.js'];
+      css_files = ['./info.freezr.admin/public/firstSetUp.css','./info.freezr.public/freezr_style.css'];
+      var temp_environment = JSON.parse(JSON.stringify(req.freezr_environment) );
+      if (temp_environment.dbParams && temp_environment.dbParams.pass ){
+          temp_environment.dbParams.pass = null;
+          temp_environment.dbParams.has_password = true;
+      };
+      if (temp_environment.dbParams && temp_environment.dbParams.connectionString ){
+          temp_environment.dbParams.connectionString = null;
+          temp_environment.dbParams.has_password = true;
+      };
+      if (temp_environment.userDirParams && temp_environment.userDirParams.access_token) {
+          temp_environment.userDirParams.access_token = null;
+          temp_environment.userDirParams.has_access_token = true;
+      }
+      other_variables = " var freezrServerStatus = "+JSON.stringify(req.freezrStatus)+"; var firstSetUp = "+(req.freezr_environment.freezr_is_setup? "false":"true")+";"+ " var freezr_environment = "+JSON.stringify(temp_environment)+";"
+      break;
+    case "starterror": // public
+      page_title = "Fatal Error (Freezr)",
+      script_files = ['./info.freezr.admin/public/starterror.js'];
+      css_files = './info.freezr.public/freezr_style.css';
+      other_variables = "var startup_errors = "+JSON.stringify(req.freezrStatus);
+      break;
+    default:
+      script_files = ['./info.freezr.admin/'+ req.params.sub_page +'.js'];
+      css_files = ['./info.freezr.admin/freezr_style.css', './info.freezr.admin/'+ req.params.sub_page +'.css'];
+      break;
+  }
 
-    var options = {
-        page_title: page_title? page_title: "Admin "+req.params.sub_page.replace('_',' ')+" (Freezr)",
-        css_files: css_files,
-        page_url: (isPublicPage? "public/":"") + (req.params.sub_page+'.html'),
-        initial_query: initial_query,
-        app_name: "info.freezr.admin",
-        user_id:req.session.logged_in_user_id,
-        user_is_admin:req.session.logged_in_as_admin,
-        script_files: script_files,
-        other_variables: other_variables? other_variables : (req.params.userid? ("var userid='"+req.params.userid+"';"):''),
-        freezr_server_version: req.freezr_server_version,
-        server_name: (helpers.startsWith(req.get('host'),"localhost")?"http":"https")+"://"+req.get('host')
-    }
+  var options = {
+    page_title: page_title? page_title: "Admin "+req.params.sub_page.replace('_',' ')+" (Freezr)",
+    css_files: css_files,
+    page_url: (isPublicPage? "public/":"") + (req.params.sub_page+'.html'),
+    initial_query: initial_query,
+    app_name: "info.freezr.admin",
+    user_id:req.session.logged_in_user_id,
+    user_is_admin:req.session.logged_in_as_admin,
+    script_files: script_files,
+    other_variables: other_variables? other_variables : (req.params.userid? ("var userid='"+req.params.userid+"';"):''),
+    freezr_server_version: req.freezr_server_version,
+    server_name: (helpers.startsWith(req.get('host'),"localhost")?"http":"https")+"://"+req.get('host')
+  }
 
-    if (isPublicPage && req.params.sub_page == "oauthvalidate") {
-        oauth_validate(req, res);
-    } else if (
-        req.params.sub_page=="firstSetUp" &&
-        req.freezr_environment.freezr_is_setup &&
-        !req.session.logged_in_as_admin
-        ) {
-        res.redirect("/");
-    } else if (!initial_query_func || isPublicPage) {
-        file_handler.load_data_html_and_page(res,options)
-    } else {
-        req.freezrInternalCallFwd = function(err, results) {
+  if (isPublicPage && req.params.sub_page == "oauthvalidate") {
+    oauth_validate(req, res);
+  } else if (
+    req.params.sub_page=="firstSetUp" &&
+    req.freezr_environment.freezr_is_setup &&
+    !req.session.logged_in_as_admin
+    ) {
+    res.redirect("/");
+  } else if (isPublicPage){
+    file_handler.load_data_html_and_page(res,options)
+  } else {
+    db_handler.get_or_set_app_token_for_logged_in_user (req.freezr_environment, req.session.device_code, req.session.logged_in_user_id,  "info.freezr.admin", function(err, results){
+      //onsole.log("in generate page - get_or_set_app_token_for_logged_in_user ",results)
+      if (err || !results.app_token) {
+        helpers.send_internal_err_page(res, "admin_handler", exports.version, "generatePage", "Could not get app token");
+      } else {
+        res.cookie('app_token_'+req.session.logged_in_user_id, results.app_token,{path:"/admin"});
+        if (!initial_query_func || isPublicPage) {
+          file_handler.load_data_html_and_page(res,options)
+        } else {
+          req.header('Authorization') = 'IntReq '+results.app_token // internal query request
+          req.freezrInternalCallFwd = function(err, results) {
             if (err) {
-                options.success = false;
-                options.error = err;
+              options.success = false;
+              options.error = err;
             } else {
-                //onsole.log("queryresults ",results)
-                options.queryresults = results;
+              //onsole.log("queryresults ",results)
+              options.queryresults = results;
             }
             file_handler.load_data_html_and_page(res,options)
+          }
+          initial_query_func(req,res);
         }
-        initial_query_func(req,res);
-    }
+
+      }
+    })
+  }
 }
 
 exports.user_register = function (req, res) {
@@ -160,10 +174,15 @@ exports.user_register = function (req, res) {
                 cb(null);
         },
 
+        // check app token
+        function (cb) {
+            let checks = {user_id: req.session.user_id, logged_in:true, requestor_app:"info.freezr.admin"}
+            db_handler.check_app_token_and_params(req, checks, cb)
+        },
 
         // 2. check if person already exists
-        function (cb) {
-            exports.make_sure_user_is_unique(req.freezr_environment, uid, em, cb);
+        function (token_user_id, requestor_app, logged_in, cb) {
+            make_sure_user_is_unique(req.freezr_environment, uid, em, cb);
         },
 
         function (field_is_clear, arg2, cb) {
@@ -355,7 +374,7 @@ exports.first_registration = function (req, callback) {
             },
 
             function (cb) {
-                db_handler.set_or_update_user_device_code(temp_environment, device_code, req.body.user_id,  false, function (err, results) {
+                db_handler.set_or_update_user_device_code(temp_environment, device_code, req.body.user_id, null, req.headers['user-agent'], function (err, results) {
                     if (err) {
                         helpers.warning("admin_handler", exports.version,"first_registration", helpers.error("Failure to get a device code - "+err.message, "device_code_err"));
                         temp_status.other_errors = ["Could not set device code in first_registration"]
@@ -410,7 +429,7 @@ exports.first_registration = function (req, callback) {
     }
 };
 
-exports.make_sure_user_is_unique = function (env_params, user_id, email_address, callback) {
+const make_sure_user_is_unique = function (env_params, user_id, email_address, callback) {
     async.waterfall([
         function (cb) {
             if (user_id) {
@@ -444,7 +463,7 @@ exports.make_sure_user_is_unique = function (env_params, user_id, email_address,
         }
     });
 }
-exports.list_all_users = function (req, res) {
+const list_all_users = function (req, res) {
     db_handler.all_users(req.freezr_environment, (err, results) => {
         if (err) {
             if (req.freezrInternalCallFwd) {
@@ -469,7 +488,7 @@ exports.list_all_users = function (req, res) {
     });
 };
 
-exports.get_main_prefs = function (req, res) {
+const get_main_prefs = function (req, res) {
     db_handler.get_or_set_prefs (req.freezr_environment, "main_prefs", null, false, function (err, theprefs) {
         //onsole.log("got prefs in get_main_prefs ",theprefs)
         if (err) {
@@ -504,8 +523,14 @@ exports.change_main_prefs = function (req, callback) {
             }
         },
 
-        // 1. get user_id
+        // check app token
         function (cb) {
+            let checks = {user_id: req.session.user_id, logged_in:true, requestor_app:"info.freezr.admin"}
+            db_handler.check_app_token_and_params(req, checks, cb)
+        },
+
+        // 1. get user_id
+        function (token_user_id, requestor_app, logged_in, cb) {
             db_handler.user_by_user_id(req.freezr_environment, user_id, cb);
         },
 
@@ -542,15 +567,18 @@ exports.change_main_prefs = function (req, callback) {
 
 var ALLOWED_ADMIN_COLLECTIONS = ['visit_log_daysum','visitLogFiles']
 exports.dbquery = function(req,res) {
-    helpers.log (req,("dbquery :"+JSON.stringify (req.body)));
-    // need req.params.collection_name and req.body..
-    const appcollowner = {
-      app_name:'info_freezer_admin',
-      collection_name:req.params.collection_name,
-      _owner:'freezr_admin'
-    }
-    const query = req.body.query_params || {};
+  helpers.log (req,("dbquery :"+JSON.stringify (req.body)));
+  // need req.params.collection_name and req.body..
+  const appcollowner = {
+    app_name:'info_freezer_admin',
+    collection_name:req.params.collection_name,
+    _owner:'freezr_admin'
+  }
+  const query = req.body.query_params || {};
 
+  // check app token
+  let checks = {user_id: req.session.user_id, logged_in:true, requestor_app:"info.freezr.admin"}
+  db_handler.check_app_token_and_params(req, checks, function(err, user_id, requestor_app, logged_in) {
     db_handler.db_find (req.freezr_environment, appcollowner,
       req.body.query_params,
       {   count: req.body.count,
@@ -569,6 +597,7 @@ exports.dbquery = function(req,res) {
         }
       }
     )
+  })
 };
 
 function add_user (env_params, valid_unique_user_id, password, valid_email, full_name, isAdmin, owner, callback) {
@@ -621,7 +650,7 @@ function add_user (env_params, valid_unique_user_id, password, valid_email, full
 var current_states = {};
 const MAX_TIME = 30000;
 var clean_intervaler = null;
-exports.list_all_oauths = function (req, res) {
+const list_all_oauths = function (req, res) {
     //onsole.log("admin list_all_oauths via db_handler ")
     console.log("************ O_OATH NOT ERROR CHECKED SINCE V 0.0.122 (list_all_oauths) *****************")
 
@@ -653,7 +682,7 @@ exports.oauth_perm_make = function (req, res) {
     console.log("************ O_OATH NOT ERROR CHECKED SINCE V 0.0.122 (oauth_perm_make) *****************")
     helpers.log (req,"New or updated oauth for source "+req.body.source+" type: "+req.body.type+" name: "+req.body.name);
     function register_auth_error(message) {return helpers.auth_failure("admin_handler.js",exports.version,"oauth_register",message)}
-    var collection = null; update=null;
+    var update=null;
     var is_update = req.body._id? true:false;
     const appcollowner = {
       app_name:'info_freezer_admin',
@@ -671,9 +700,14 @@ exports.oauth_perm_make = function (req, res) {
             }
         },
 
+        // check app token
+        function (cb) {
+            let checks = {user_id: req.session.user_id, logged_in:true, requestor_app:"info.freezr.admin"}
+            db_handler.check_app_token_and_params(req, checks, cb)
+        },
+
         // 2. check if person already exists
-        function (coll, cb) {
-            collection = coll;
+        function (token_user_id, requestor_app, logged_in, cb) {
             if (is_update) {
               db_handler.db_getbyid(req.freezr_environment, appcollowner, req.body._id, cb)
             } else {

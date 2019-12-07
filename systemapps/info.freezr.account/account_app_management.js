@@ -134,6 +134,25 @@ var buttons = {
       })
     }
   },
+  'addBlankApp': function() {
+    userHasIntiatedAcions = true;
+    let app_name= document.getElementById("appNameForBlankApp").innerText
+
+    if (!valid_app_name(app_name)) {
+      showError("Invalid app name - please correct the app name")
+    } else {
+      freezer_restricted.menu.resetDialogueBox(true);
+      freezer_restricted.connect.ask('/v1/account/app_install_blank', {'app_name':app_name }, function(returndata) {
+          console.log(returndata)
+          var d = freezr.utils.parse(returndata);
+          if (d.err) {
+            writeErrorsToFreezrDialogue(d)
+          } else{
+            ShowAppUploadErrors(d.flags,uploadSuccess);
+          }
+      })
+    }
+  },
   'updateApp': function(args) {
     userHasIntiatedAcions = true;
     window.scrollTo(0, 0);
@@ -151,6 +170,21 @@ var buttons = {
           ShowAppUploadErrors(d.flags,showDevOptions)
         }
         buttons.updateAppList();
+    })
+  },
+  'genAppPassword': function(args){
+    freezr.perms.generateAppPassword(args[0], null, (resp) => {
+      resp=freezr.utils.parse(resp)
+      console.log(resp)
+
+
+      var copyText = document.getElementById("cutpastetext");
+      copyText.innerHTML = resp.app_password
+      copyText.select();
+      //copyText.setSelectionRange(0, 99999); /*For mobile devices*/
+      document.execCommand("copy");
+
+      alert("Your password for the offline app of "+args[0]+" is: "+resp.app_password+ " you can copy this and paste it in your off line app")
     })
   },
   'addAppInFolder': function() {

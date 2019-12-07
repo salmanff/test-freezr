@@ -604,24 +604,22 @@ var userAppsLocalPathTo = function(partialUrl) {
 const FREEZR_CORE_CSS = '<link rel="stylesheet" href="/app_files/info.freezr.public/freezr_core.css" type="text/css" />'
 const FREEZR_CORE_JS = '<script src="/app_files/info.freezr.public/freezr_core.js" type="text/javascript"></script>'
 exports.load_data_html_and_page = function(res,options, env_params){
-    //onsole.log("load_data_html_and_page  for "+JSON.stringify(options.page_url) )
-    exports.get_file_content(options.app_name, options.page_url, env_params, function(err, html_content) {
-        if (err) {
-            helpers.warning("file_handler", exports.version, "load_data_html_and_page", "got err reading: "+exports.partPathToAppFiles(options.app_name, options.page_url) )
-            res.redirect('/account/home?error=true&error_type=internal&msg=couldnotreadfile-'+options.app_name+"/"+options.page_url)
-        } else {
-            //onsole.log("got file content in file handler for ",options.app_name, options.page_url)
-            if (options.queryresults){
-                //onsole.log("queryresults:"+JSON.stringify(options.queryresults))
-                var Mustache = require('mustache');
-                options.page_html =  Mustache.render(html_content, options.queryresults);
-                exports.load_page_html(res,options)
-            } else {
-                options.page_html= html_content;
-                exports.load_page_html(res,options)
-            }
-        }
-    });
+  //onsole.log("load_data_html_and_page  for "+JSON.stringify(options.page_url) )
+  exports.get_file_content(options.app_name, options.page_url, env_params, function(err, html_content) {
+    if (err) {
+        helpers.warning("file_handler", exports.version, "load_data_html_and_page", "got err reading: "+exports.partPathToAppFiles(options.app_name, options.page_url) )
+        html_content = fs.readFileSync("systemapps"+exports.sep()+"info.freezr.public"+exports.sep()+"fileNotFound.html")
+    }
+    if (options.queryresults){
+        //onsole.log("queryresults:"+JSON.stringify(options.queryresults))
+        var Mustache = require('mustache');
+        options.page_html =  Mustache.render(html_content, options.queryresults);
+        exports.load_page_html(res,options)
+    } else {
+        options.page_html= html_content;
+        exports.load_page_html(res,options)
+    }
+  });
 }
 exports.load_page_html = function(res, opt) {
     //onsole.log("load page html",opt.app_name+"... "+opt.page_url)

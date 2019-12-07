@@ -12,6 +12,7 @@ exports.version = "0.0.131"; // Changed names from freezr__db
 const async = require('async'),
       fs = require('fs'),
       helpers = require("./helpers.js"),
+      bcrypt = require('bcryptjs'),
       file_handler = require('./file_handler.js'),
       db_default_mongo = require("./environment/db_default_mongo.js") // Default db
 
@@ -147,10 +148,11 @@ exports.db_find = function(env_params, appcollowner, idOrQuery, options, callbac
   //onsole.log("find idOrQuery ",idOrQuery, (typeof idOrQuery))
   // options are sort, count, skip
   appcollowner.app_name = appcollowner.app_name.replace(/\./g,"_")
+  options = options || {}
   if (typeof idOrQuery == "string") {
     dbToUse(env_params).db_getbyid(env_params, appcollowner, idOrQuery, function(err, object) {callback(err, (object? [object]:[]))})
   } else {
-    let [err, well_formed] = query_is_well_formed(idOrQuery)
+    let [err, well_formed] = [null, true] //todo fix // query_is_well_formed(idOrQuery)
     if (well_formed) {
       dbToUse(env_params).db_find(env_params, appcollowner, idOrQuery, options, callback)
     } else {
@@ -307,7 +309,7 @@ exports.user_by_user_id = function (env_params, user_id, callback) {
 exports.all_users = function (env_params, callback) {
   exports.db_find(env_params, USERS_APC, null, {count:ARBITRARY_COUNT}, callback)
 };
-exports.changeUserPassword = function (user_id,password, callback) {
+exports.changeUserPassword = function (env_params, user_id,password, callback) {
 
     async.waterfall([
         // validate params
@@ -361,207 +363,205 @@ function admin_obj_by_unique_field (env_params, app_name, collection_name, field
     });
 };
 
-// USER_DEVICES
-exports.set_or_update_user_device_code = function (env_params, device_code, user_id,login_for_app_name, callback){
+// USER_DEVICES and tokens
+
+exports.set_or_update_user_device_code = function (env_params, device_code, user_id, single_app, user_agent, callback){
+  // device_code, user_id and single_app together dfine user_device code so different apps hold different records
   let write = {
     'device_code':device_code,
     'user_id':user_id,
-    'login_for_app_name':login_for_app_name
+    single_app:single_app,
+    user_agent:user_agent
   }
   const appcollowner = {
     app_name:'info_freezer_admin',
     collection_name:'user_devices',
     _owner:user_id
   }
-
   //onsole.log("in db:handler set_or_update_user_device_code")
   exports.db_upsert (env_params, appcollowner,
-    {'device_code':device_code, 'user_id':user_id},
+    {'device_code':device_code, 'user_id':user_id, single_app:single_app},
     write,
     (err, results) => {
         if (err) {
             callback(err);
         } else {
-            callback(null, {'device_code':device_code, 'login_for_app_name':login_for_app_name});
+            callback(null, {'device_code':device_code, 'single_app':single_app});
         }
     })
 }
-exports.get_device_code_specific_session = function (env_params, device_code, user_id, callback){
-    //onsole.log("get_device_code_specific_session "+user_id+" app: "+app_name);
-    const appcollowner = {
-      app_name:'info_freezer_admin',
-      collection_name:'user_devices',
-      _owner:user_id
-    }
-    exports.db_find(env_params, appcollowner,
-      {'device_code':device_code, 'user_id':user_id}, //query
-      {skip:0, count:1}, // options
-      (err, results) => {
+
+// app_tokens
+const APP_TOKEN_APC = {
+  app_name:'info_freezer_admin',
+  collection_name:'app_tokens',
+  _owner:'freezr_admin'
+}
+let TOKEN_CACHE = {}
+const EXPIRY_DEFAULT = 30*24*60*60*1000 //30 days
+const generate_app_password = function(user_id, app_name, device_code){
+  return helpers.randomText(20)
+}
+const generate_app_token = function(user_id, app_name, device_code){
+  return helpers.randomText(50)
+}
+exports.get_or_set_app_token_for_logged_in_user = function (env_params, device_code, user_id,  app_name, callback) {
+  exports.db_find(env_params, APP_TOKEN_APC, {user_id:user_id, app_name:app_name, user_device:device_code, source_device:device_code}, null,
+    (err, results) => {
+    const nowTime = (new Date().getTime())
+    //onsole.log("get_or_set_app_token_for_logged_in_user",results)
+    if (err) {
+      callback(err);
+    } else if (results && results.length>0 /*&& (results[0].expiry+(5*24*60*60*1000))>nowTime*/){ // re-issue 5 days before
+      //onsole.log("sending back ",results[0])
+      callback(null, results[0])
+    } else {
+      let record_id = (results && results[0] && results[0]._id)? results[0]._id:null;
+      let write = {
+        'logged_in':true,
+        'source_device':device_code,
+        'user_id':user_id,
+        'app_name':app_name,
+        'app_password': null,
+        'app_token': generate_app_token(user_id, app_name, device_code), // create token instead
+        'expiry':(nowTime+ EXPIRY_DEFAULT),
+        'user_device': device_code,
+        'date_used': (record_id? results[0].date_used : nowTime)
+      }
+      const write_cb = function (err, results){
+        //onsole.log("in write_cb, err is ",err,"results",results)
         if (err) {
-            callback(err, null, callback);
-        } else if (!results || results.length==0) {
-            callback(helpers.missing_data("device code for specific session", "db_handler", exports.version,"get_device_code_specific_session"), null, callback);
+          callback(err);
         } else {
-            callback(null, {'device_code':device_code, 'login_for_app_name':login_for_app_name}, callback);
+          callback(null, {'success':true, 'app_name':app_name, app_token: write.app_token});
         }
       }
-    )
+      if (record_id) {
+        exports.db_update (env_params, APP_TOKEN_APC, record_id, write, {replaceAllFields:true}, write_cb)
+      } else {
+        exports.db_insert (env_params, APP_TOKEN_APC, null, write, null,write_cb)
+      }
+    }
+  })
 }
-exports.check_device_code_specific_session = function (env_params, device_code, user_id, app_name, callback){
-  const appcollowner = {
-    app_name:'info_freezer_admin',
-    collection_name:'user_devices',
-    _owner:user_id
+exports.set_app_token_record_with_onetime_password = function (env_params, device_code, user_id, app_name, expiry, callback){
+  if (!expiry) expiry = new Date ().getTime() + EXPIRY_DEFAULT
+  let write = {
+    'logged_in':false,
+    'source_device':device_code,
+    'user_id':user_id,
+    'app_name':app_name,
+    'app_password': generate_app_password(user_id, app_name, device_code),
+    'app_token': generate_app_token(user_id, app_name, device_code), // create token instead
+    'expiry':expiry,
+    'user_device': null,
+    'date_used':null // to be replaced by date
   }
-  dbToUse(env_params).db_find(env_params, appcollowner,
-    {'device_code':device_code, 'user_id':user_id}, //query
-    {skip:0, count:1}, // options
+  //onsole.log("in db:handler set_or_update_user_device_code")
+  exports.db_insert (env_params, APP_TOKEN_APC, null,
+    write, null,
     (err, results) => {
         if (err) {
             callback(err);
-        } else if (!results || results.length==0) {
-            callback(helpers.missing_data("device code for specific session (2)", "db_handler", exports.version,"check_device_code_specific_session"));
-        } else if (!results[0].login_for_app_name) {
-            callback(null);
-        } else if (results[0].login_for_app_name == app_name) {
-            callback(null);
         } else {
-            callback(helpers.auth_failure("db_handler", exports.version, "check_device_code_specific_session", "invalid device code for app"));
+            callback(null, {'success':true, 'app_name':app_name, app_password: write.app_password});
         }
-    });
+    })
 }
-
-// APP CODE CHECK
-exports.check_app_code = function(env_params, user_id, app_name, source_app_code, callback) {
-    // check app code... ie open user_installed_app_list and make sure app source code is correct
-     // see if query is _owner is user_id... or query and is user_id... if so send cb(null)
-    // for each user, see if permission has been given
-    //onsole.log("check_app_code");
-
-    async.waterfall([
-        // 1. Get user App Code
-        function (cb) {
-            exports.get_user_app_code(env_params, user_id,app_name, cb);
-        },
-
-        function(user_app_code,cb) {
-            if (user_app_code) {
-                if (""+user_app_code== ""+source_app_code) {
-                    cb(null)
-                } else {
-                    cb(helpers.auth_failure("db_handler", exports.version, "check_app_code", "WRONG SOURCE APP CODE"));
-                }
-            } else {
-                cb(helpers.auth_failure("db_handler", exports.version, "check_app_code", "inexistant SOURCE APP CODE"));
-            }
-        }
-    ],
-    function (err, results) {
-        if (err) {
-            callback(err);
-        } else {
-            callback(null)
-        }
-    });
-}
-exports.get_user_app_code = function (env_params, user_id, app_name, callback){
-    //onsole.log("getting app code for "+user_id+" app "+app_name);
-    const appcollowner = {
-      app_name:'info_freezer_admin',
-      collection_name:'user_installed_app_list',
-      _owner:user_id
-    }
-    dbToUse(env_params).db_find(env_params, appcollowner,
-      {'_id':user_id+'}{'+app_name}, //query
-      {skip:0, count:1}, // options
-      (err, results) => {
-        //onsole.log("get_user_app_code results")
-        //onsole.log(results)
-          if (err) {
-              callback(err, null);
-          } else if (!results || results.length<1 || !results[0].app_code) {
-              callback(null, null);
+exports.get_app_token_record_using_pw_and_mark_used = function(env_params, device_code, user_id,  app_name, password, callback) {
+  exports.db_find(env_params, APP_TOKEN_APC, {app_password:password}, null,
+    (err, results) => {
+    //onsole.log("get_app_token_record_using_pw",results)
+    if (err) {
+      callback(err);
+    } else if (!results || results.length==0){
+      callback(helpers.error("no_results", "expected record but found none (get_app_token_record_using_pw)"))
+    } else {
+      let record = results[0]; // todo - theoretically there could be multiple and the right one need to be found
+      if (record.user_id !=user_id || record.app_name != app_name) {
+        console.warn(app_name, user_id, record)
+        callback(helpers.error("mismatch", "app_name or user_id no not match expected value (get_app_token_record_using_pw)"))
+      } else {
+        db_handler.get_app_token_record_using_pw(env_params, user_id,  app_name, password, function(err, record) {
+          //onsole.log("results in db_handler get_app_token_record_using_pw",record)
+          if (record.date_used){
+            callback(helpers.error("password_used","One time password already in use."))
+          } else if (helpers.expiry_date_passed(record.expiry)){
+            callback(helpers.error("password_expired","One time password has expired."))
           } else {
-              callback(null, results[0].app_code);
+            record.user_device = device_code
+            exports.db_update (env_params, APP_TOKEN_APC, record._id,
+              {date_used:(new Date().getTime()), user_device:record.user_device}, null,function(err, results) {
+                if (err) {callbak(err)} else {callback(null, record.app_token)}
+              })
           }
+        })
       }
-    );
-}
-exports.remove_user_app = function (env_params, user_id, app_name, callback){
-    //onsole.log("removing app  for "+user_id+" app "+app_name);
-    const db_query = {'_id':user_id+'}{'+app_name};
-    const appcollowner = {
-      app_name:'info_freezer_admin',
-      collection_name:'user_installed_app_list',
-      _owner:user_id
     }
-    exports.db_update (env_params, appcollowner,
-      {'_id':user_id+'}{'+app_name}, // query,
-      {removed: true, app_code:null}, // updates_to_entity
-      {replaceAllFields:false}, // options
-      callback)
+  })
 }
-exports.get_or_set_user_app_code = function (env_params, user_id,app_name, callback){
-    //onsole.log("get_or_set_user_app_code for "+user_id)
-    var app_code = null, new_app_code=null;
-    const appcollowner = {
-      app_name:'info_freezer_admin',
-      collection_name:'user_installed_app_list',
-      _owner:user_id
-    }
-    async.waterfall([
-        // 1. Get App Code
-        function (cb) {
-          exports.db_find(env_params, appcollowner,
-            {'_id':user_id+'}{'+app_name}, //query
-            {skip:0, count:1}, // options
-            cb)
-        },
+exports.find_token_from_cache_or_db = function (env_params, app_token, cb) {
+  //onsole.log("finding ",app_token)
+  if (TOKEN_CACHE [app_token] ) {
+    cb(null, [TOKEN_CACHE[app_token] ])
+  } else {
+    exports.db_find(env_params, APP_TOKEN_APC, {app_token:app_token}, null, cb)
+  }
+}
+exports.reset_token_cache = function(app_token){
+  if (app_token) {
+    delete TOKEN_CACHE[app_token]
+  } else { // delete all
+    TOKEN_CACHE={}
+  }
+}
+exports.check_app_token_and_params = function(req, checks, callback) {
+  let app_token = (req.header('Authorization') && req.header('Authorization').length>10)? req.header('Authorization').slice(7):null;
+  if (!app_token) app_token = req.params.internal_query_token
+  //onsole.log("check_app_token_record for "+app_token+" and app: "+checks.requestor_app)
 
-        function (user_app_records, cb) {
-          //onsole.log("get_or_set_user_app_code got ",user_app_records)
-            if (user_app_records && user_app_records.length>0) {
-                app_code = user_app_records[0].app_code;
-                new_app_code = false;
-                if (user_app_records[0].removed) {
-                    app_code = helpers.randomText(10);
-                    exports.db_update (env_params, appcollowner,
-                      {_id: user_app_records[0]._id},  //idOrQuery,
-                      {app_code: app_code, removed: false}, // updates_to_entity
-                      {replaceAllFields:false, multi:false},
-                      cb)
-                } else {
-                    cb(null, cb);
-                }
-            } else { // GOT NEW APP CODE
-                new_app_code = Math.round(Math.random()*10000000);
-                var write = {
-                    _id: user_id+'}{'+app_name,
-                    app_code: new_app_code,
-                    app_name: app_name,
-                    app_delivered:false,
-                    _owner: user_id,
-                    removed: false
-                };
-                exports.db_insert (env_params, appcollowner, user_id+'}{'+app_name , write, null, (err, inserted)=>{
-                  cb(err, (inserted && inserted.entity)? [inserted.entity] : [])
-                })
-            }
+  if (!app_token) {
+    callback(helpers.error("tokem", "expected app_token but found none (check_app_token_record)"))
+  } else {
+    exports.find_token_from_cache_or_db(req.freezr_environment, app_token, (err, results) => {
+      if (err) {
+        callback(err);
+      } else if (!results || results.length==0){
+        callback(helpers.error("no_results", "expected record but found none (check_app_token_record)"))
+      } else {
+        let record = results[0]; // todo - theoretically there could be multiple and the right one need to be found
+        const ARBITRARY_CACHE_MAX = 50;
+        if (Object.keys(TOKEN_CACHE).length > ARBITRARY_CACHE_MAX) TOKEN_CACHE={}
+        TOKEN_CACHE[app_token] = record;
+        if (typeof checks.requestor_app == "string")  checks.requestor_app=[checks.requestor_app]
+        if (!checks.requestor_app) checks.requestor_app=[]
+        //onsole.log("check_app_token_record ", record)
+        if (!record) {
+          console.warn("No record found for app token at device ", req.session.device_code)
+          callback(helpers.error("mismatch", "record not found (check_app_token_and_params)"))
+        } else if (!record.user_id || !record.app_name ||
+              record.user_device != req.session.device_code) {
+          console.warn(app_name, user_id, req.session.device_code, record)
+          callback(helpers.error("mismatch", "app_name or user_id or device_code do not match expected value (check_app_token_and_params)"), record)
+        } else if (checks.user_id && record.user_id != checks.user_id ){
+          callback(helpers.error("mismatch", "user_id does not match expected value (check_app_token_and_params) "), record)
+        } else if (checks.requestor_app.length>0 && checks.requestor_app.indexOf(record.app_name)<0 ){
+          callback(helpers.error("mismatch", "app_name does not match expected value (check_app_token_and_params) "), record)
+        } else if (record.logged_in && record.user_id != req.session.logged_in_user_id ){
+          callback(helpers.error("mismatch", "user_id does not match logged in (check_app_token_and_params) "), record)
+        } else if (record.logged_in && checks.logged_in === false){
+          callback(helpers.error("mismatch", "true token logged_in does not match logged in (check_app_token_and_params) "), record)
+        } else if (!record.logged_in && checks.logged_in === true){
+          callback(helpers.error("mismatch", "false token logged_in does not match logged in (check_app_token_and_params) "), record)
+        } else {
+          //onsole.log("checking device codes ..", req.session.device_code, the_user, req.params.requestor_app)
+          callback(err, record.user_id, record.app_name, record.logged_in)
         }
-    ],
-    function (err, results) {
-        if (err) {
-            callback(err, null, callback);
-        } else if (app_code) {
-            callback(null, {'app_code':app_code, 'newCode':(new_app_code?true:false)}, callback);
-        } else if (results && results[0] && results[0].app_code) { // old mong_o
-            app_code = results[0].app_code
-            callback(null, {'app_code':app_code, 'newCode':(new_app_code?true:false)}, callback);
-        } else  {
-            callback(helpers.internal_error("db_handler", exports.version, "get_or_set_user_app_code", "Unknown Error Getting App code"), null, callback)
-        }
-    });
+      }
+    })
+  }
 }
+
 
 // APP INTERACTIONS
 exports.update_permission_records_from_app_config = function(env_params, app_config, app_name, user_id, flags, callback) {
@@ -585,16 +585,7 @@ exports.update_permission_records_from_app_config = function(env_params, app_con
             async.forEach(users, function (aUser, cb) {
                 async.waterfall ([
 
-                    // 1. register app for the user
-                    function (cb) {
-                        exports.get_or_set_user_app_code(env_params, aUser.user_id,app_name, cb)
-                    },
-
-                    function (a,b,cb) {
-                        cb(null)
-                    },
-
-                    // 2. for each permission, get or set a permission record
+                    // 1. for each permission, get or set a permission record
                     function (cb) {
                         async.forEach(queried_schema_list, function (schemad_permission, cb) { // get perms
                             exports.permission_by_owner_and_permissionName(env_params, aUser.user_id,
@@ -720,8 +711,20 @@ exports.all_user_apps = function (env_params, user_id, skip, count, callback) {
           callback)
     }
 };
-
-
+exports.remove_user_app = function (env_params, user_id, app_name, callback){
+    //onsole.log("removing app  for "+user_id+" app "+app_name);
+    const db_query = {'_id':user_id+'}{'+app_name};
+    const appcollowner = {
+      app_name:'info_freezer_admin',
+      collection_name:'user_installed_app_list',
+      _owner:user_id
+    }
+    exports.db_update (env_params, appcollowner,
+      {'_id':user_id+'}{'+app_name}, // query,
+      {removed: true, app_code:null}, // updates_to_entity
+      {replaceAllFields:false}, // options
+      callback)
+}
 exports.remove_user_records = function (env_params, user_id, app_name, callback) {
     var appDb, collection_names = [], other_data_exists = false;
     helpers.log (fake_req_from(user_id) ,("remove_user_records for "+user_id+" "+app_name));
@@ -892,13 +895,7 @@ exports.create_query_permission_record = function (env_params, user_id, requesto
         max_count       : permission_object.count? permission_object.count: null,
     };
 
-    if (write.type == "field_delegate") {
-        write.sharable_fields = permission_object.sharable_fields? permission_object.sharable_fields : [];
-        write.sharable_groups = permission_object.sharable_groups? permission_object.sharable_groups : "self";
-    } else if (write.type == "folder_delegate") {
-        write.sharable_folders = permission_object.sharable_folders? permission_object.sharable_folders : ['/'];
-        write.sharable_groups = permission_object.sharable_groups? permission_object.sharable_groups : "self";
-    } else if (write.type == "outside_scripts") {
+    if (write.type == "outside_scripts") {
         write.script_url = permission_object.script_url? permission_object.script_url : null;
     } else if (write.type == "web_connect") {
         write.web_url = permission_object.web_url? permission_object.web_url : null;
@@ -975,7 +972,23 @@ exports.permission_by_owner_and_permissionName = function (env_params, user_id, 
                                   {'permission_name':permission_name}
                         ]};
         exports.db_find(env_params, PERMISSION_APC, dbQuery, {}, callback)
-        //function(err, results){console.log('err'); console.log(err); console.log(results) callback(err, results)}
+    }
+}
+exports.granted_permissions_by_owner_and_apps = function (env_params, user_id, requestor_app, requestee_app, callback) {
+    //onsole.log("getting perms for "+user_id+" "+requestor_app+" "+requestee_app+" "+ permission_name)
+    if (!user_id) {
+        callback(helpers.missing_data("cannot get permission without user_id", "db_handler", exports.version,"permission_by_owner_and_permissionName"));
+    } else if (!requestor_app) {
+        callback(helpers.missing_data("cannot get permission without requestor_app", "db_handler", exports.version,"permission_by_owner_and_permissionName"));
+    } else if (!requestee_app) {
+        callback(helpers.missing_data("cannot get permission without requestee_app", "db_handler", exports.version,"permission_by_owner_and_permissionName"));
+    } else {
+        const dbQuery = {'$and': [{"permitter":user_id},
+                                  {'requestee_app':requestee_app},
+                                  {'requestor_app':requestor_app},
+                                  {"granted":true}, {$or:[{"outDated":false}, {"outDated":null}] }
+                        ]};
+        exports.db_find(env_params, PERMISSION_APC, dbQuery, {}, callback)
     }
 }
 exports.permission_by_owner_and_objectId = function (user_id, requestee_app, collection_name, data_object_id, callback) {
@@ -1100,12 +1113,15 @@ const query_is_well_formed = function(topquery) {
       if (i++ == 1) {
         if (typeof obj[key]!="string" && isNaN(obj[key])
             && !(toplevel==true && key=="$or" && Array.isArray(obj[key]) ) ) {
-          err1 += " - Object cannot have multiple levels of queries"
+          //todo fix
+          //err1 += " - Object cannot have multiple levels of queries"
         } else {
           ret= [key, obj[key], null]
         }
       } else {
-        err1 += "Object contains more than one element (expected 1 for: "+JSON.stringify(obj)+")"
+        //todo fix
+        //err1 += " - Object cannot have multiple levels of queries"
+        //err1 += "Object contains more than one element (expected 1 for: "+JSON.stringify(obj)+")"
       }
     });
     if (err1) ret[2]=err1
@@ -1229,12 +1245,12 @@ exports.all_oauths = function (include_disabled, skip, count, callback) {
 const fake_req_from = function(user_id) {return {session:{logged_in_user_id:user_id}}}
 
 var objectsAreSimilar = function(attribute_list, object1, object2 ) {
-    // console.log - todo this is very simple - need to improve
+    // todo this is very simple - need to improve
     var foundUnequalObjects = false;
     //onsole.log("Checking similarity for 1:"+JSON.stringify(object1)+"  "+" VERSUS:  2:"+JSON.stringify(object2));
     for (var i=0; i<attribute_list.length; i++) {
         if ((JSON.stringify(object1[attribute_list[i]]) != JSON.stringify(object2[attribute_list[i]])) && (!isEmpty(object1[attribute_list[i]]) && !isEmpty(object2[attribute_list[i]]))) {
-            // console.log("unequal objects found ", object1[attribute_list[i]] , " and ", object2[attribute_list[i]])
+            // onsole.log("unequal objects found ", object1[attribute_list[i]] , " and ", object2[attribute_list[i]])
             // todo - improve checking for lists
             foundUnequalObjects=true;
         };

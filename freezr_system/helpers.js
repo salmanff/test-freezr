@@ -17,7 +17,7 @@ exports.log = function(req, message) {
     exports.permitted_types = {
         groups_for_objects: ["user","logged_in","public"],
         groups_for_fields: ["user","logged_in"],
-        type_names: ["folder_delegate","field_delegate","object_delegate", "db_query"], // used in getDataObject
+        type_names: ["folder_delegate", "db_query"], // used in getDataObject
     }
     var reserved_collection_names = ["field_permissions", "accessible_objects"]; // "files" s also reserved but can write to it
     const RESERVED_IDS =["freezr_admin"]
@@ -149,6 +149,7 @@ exports.log = function(req, message) {
         exports.send_failure(res, err, system_file, version, theFunction, message )
     };
     exports.send_internal_err_page= function (res, system_file, version, theFunction, message ) {
+        // console 2019 - redo this page...
         var err = exports.internal_error (system_file, version, theFunction, message )
         res.redirect('/account/home?error=true&error_type=internal&file='+system_file+"&msg="+message)
     };
@@ -226,6 +227,11 @@ exports.log = function(req, message) {
         for( var i=0; i < textlen; i++ )
             text += possible.charAt(Math.floor(Math.random() * possible.length));
         return text;
+    }
+
+    exports.expiry_date_passed = function (expiry) { // expiry is a date in unix epochtime
+      const now = new Date().getTime();
+      return (now>expiry)
     }
 
 // Other..
