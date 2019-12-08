@@ -157,65 +157,70 @@ var generatePageWithAppConfig = function (req, res, app_config) {
       if (err || !results.app_token) {
           helpers.send_internal_err_page(res, "app_handler", exports.version, "generatePage", "Could not get app token");
       } else {
-        res.cookie('app_token_'+req.session.logged_in_user_id, results.app_token,{path:"/apps/"+req.params.app_name});
+        db_handler.mark_app_as_used (req.freezr_environment, req.session.logged_in_user_id, req.params.app_name, function(err) {
+          if (err) {
+            helpers.send_internal_err_page(res, "app_handler", exports.version, "generatePage", "Could not set app as used");
+          } else {
+            res.cookie('app_token_'+req.session.logged_in_user_id, results.app_token,{path:"/apps/"+req.params.app_name});
 
-        //options.messages.showOnStart = (results.newCode && app_config && app_config.permissions && Object.keys(app_config.permissions).length > 0);
-        // console 2019 todo mechanism for knowing app is installed for fist time and going to permissions - perhaps do after install
+            //options.messages.showOnStart = (results.newCode && app_config && app_config.permissions && Object.keys(app_config.permissions).length > 0);
+            // console 2019 todo mechanism for knowing app is installed for fist time and going to permissions - perhaps do after install
 
-        if (page_params.css_files) {
-            if (typeof page_params.css_files == "string") page_params.css_files = [page_params.css_files];
-            page_params.css_files.forEach(function(css_file) {
-                if (helpers.startsWith(css_file,"http")) {
-                    helpers.app_data_error(exports.version, "generatePage", req.params.app_name, "Cannot have css files referring to other hosts")
-                } else {
-                    if (file_handler.fileExt(css_file) == 'css'){
-                        options.css_files.push(css_file);
+            if (page_params.css_files) {
+                if (typeof page_params.css_files == "string") page_params.css_files = [page_params.css_files];
+                page_params.css_files.forEach(function(css_file) {
+                    if (helpers.startsWith(css_file,"http")) {
+                        helpers.app_data_error(exports.version, "generatePage", req.params.app_name, "Cannot have css files referring to other hosts")
                     } else {
-                        helpers.app_data_error(exports.version, "generatePage", req.params.app_name, "Cannot have non js file used as css "+css_file)
+                        if (file_handler.fileExt(css_file) == 'css'){
+                            options.css_files.push(css_file);
+                        } else {
+                            helpers.app_data_error(exports.version, "generatePage", req.params.app_name, "Cannot have non js file used as css "+css_file)
+                        }
                     }
-                }
-            });
-        }
-        var outside_scripts = [];
-        if (page_params.script_files) {
-            if (typeof page_params.script_files == "string") page_params.script_files = [page_params.script_files];
-            page_params.script_files.forEach(function(js_file) {
-                if (helpers.startsWith(js_file,"http")) {
-                    outside_scripts.push(js_file)
-                } else {
-                    // Check if exists? - todo and review - err if file doesn't exist?
-                    if (file_handler.fileExt(js_file) == 'js'){
-                        options.script_files.push(js_file);
+                });
+            }
+            var outside_scripts = [];
+            if (page_params.script_files) {
+                if (typeof page_params.script_files == "string") page_params.script_files = [page_params.script_files];
+                page_params.script_files.forEach(function(js_file) {
+                    if (helpers.startsWith(js_file,"http")) {
+                        outside_scripts.push(js_file)
                     } else {
-                        helpers.app_data_error(exports.version, "generatePage", req.params.app_name, "Cannot have non js file used as js.")
+                        // Check if exists? - todo and review - err if file doesn't exist?
+                        if (file_handler.fileExt(js_file) == 'js'){
+                            options.script_files.push(js_file);
+                        } else {
+                            helpers.app_data_error(exports.version, "generatePage", req.params.app_name, "Cannot have non js file used as js.")
+                        }
                     }
-                }
-            });
-        }
+                });
+            }
 
-        if (outside_scripts.length>0) {
-            db_handler.all_userAppPermissions(req.freezr_environment, req.session.logged_in_user_id, req.params.app_name, function(err, perm_list, cb) {
-                if (err) {
-                    helpers.send_internal_err_page(res, "app_handler", exports.version, "generatePage", "Could not get user app  permissions");
-                } else {
-                    if (perm_list.length>0) {
-                        outside_scripts.forEach(function(script_requested) {
-                            for (var i=0; i<perm_list.length; i++) {
-                                var perm_obj = perm_list[i];
-                                if (perm_obj.script_url && perm_obj.script_url == script_requested && perm_obj.granted && !perm_obj.denied) {
-                                    options.script_files.push(perm_obj.script_url);
-                                    break;
+            if (outside_scripts.length>0) {
+                db_handler.all_userAppPermissions(req.freezr_environment, req.session.logged_in_user_id, req.params.app_name, function(err, perm_list, cb) {
+                    if (err) {
+                        helpers.send_internal_err_page(res, "app_handler", exports.version, "generatePage", "Could not get user app  permissions");
+                    } else {
+                        if (perm_list.length>0) {
+                            outside_scripts.forEach(function(script_requested) {
+                                for (var i=0; i<perm_list.length; i++) {
+                                    var perm_obj = perm_list[i];
+                                    if (perm_obj.script_url && perm_obj.script_url == script_requested && perm_obj.granted && !perm_obj.denied) {
+                                        options.script_files.push(perm_obj.script_url);
+                                        break;
+                                    }
                                 }
-                            }
-                        });
+                            });
+                        }
+                        file_handler.load_data_html_and_page(res, options, req.freezr_environment);
                     }
-                    file_handler.load_data_html_and_page(res, options, req.freezr_environment);
-                }
-            })
-        } else {
-            file_handler.load_data_html_and_page(res, options, req.freezr_environment);
-        }
-
+                })
+            } else {
+                file_handler.load_data_html_and_page(res, options, req.freezr_environment);
+            }
+          }
+        })
       }
     })
 };

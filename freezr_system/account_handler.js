@@ -658,8 +658,16 @@ exports.install_app = function (req, res) {
       }
     },
 
-    // 9. delete temporary file when app has been downloaded
+
+    // 9. mark app in user installed list
     function(app_info, cb) {
+      db_handler.mark_app_as_used (req.freezr_environment, req.session.logged_in_user_id, app_name, cb)
+    },
+
+
+
+    // 10. delete temporary file when app has been downloaded
+    function(result, cb) {
       if (req.installsource == "get_file_from_url_to_install_app"){
         const fs=require('fs')
         fs.unlink(req.file.buffer, cb)
@@ -667,8 +675,6 @@ exports.install_app = function (req, res) {
         cb(null);
       }
     },
-
-
     // todo later (may be) - also check app_confg permissions (as per changeNamedPermissions) to warn of any issues
     ],
     function (err, dummy) {

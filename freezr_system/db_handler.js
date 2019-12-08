@@ -713,17 +713,34 @@ exports.all_user_apps = function (env_params, user_id, skip, count, callback) {
 };
 exports.remove_user_app = function (env_params, user_id, app_name, callback){
     //onsole.log("removing app  for "+user_id+" app "+app_name);
-    const db_query = {'_id':user_id+'}{'+app_name};
+    const req_id = user_id+'}{'+app_name
     const appcollowner = {
       app_name:'info_freezer_admin',
       collection_name:'user_installed_app_list',
       _owner:user_id
     }
+    USED_APP_LIST[req_id]=null
     exports.db_update (env_params, appcollowner,
-      {'_id':user_id+'}{'+app_name}, // query,
-      {removed: true, app_code:null}, // updates_to_entity
+      req_id, // query,
+      {removed: true}, // updates_to_entity
       {replaceAllFields:false}, // options
       callback)
+}
+const USED_APP_LIST = {}
+exports.mark_app_as_used = function (env_params, user_id, app_name, callback){
+    //onsole.log("removing app  for "+user_id+" app "+app_name);
+    const req_id = user_id+'}{'+app_name
+    if (USED_APP_LIST[req_id]) {
+      callback(null)
+    } else {
+      const rec = {app_name: app_name, user_id:user_id,removed: false}
+      const appcollowner = {
+        app_name:'info_freezer_admin',
+        collection_name:'user_installed_app_list',
+        _owner:user_id
+      }
+      exports.db_upsert (env_params, appcollowner, req_id, rec, callback)
+    }
 }
 exports.remove_user_records = function (env_params, user_id, app_name, callback) {
     var appDb, collection_names = [], other_data_exists = false;
