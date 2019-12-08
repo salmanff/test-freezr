@@ -97,7 +97,7 @@ exports.generatePage = function (req, res) {
                         req.params.requestee_app = req.params.requestor_app;
                         req.body.collection = data_params.collection_name || null;
                     }
-                    req.header('Authorization') = 'IntReq '+results.app_token // internal query request
+                    req.params.internal_query_token = results.app_token // internal query request
 
                     req.internalcallfwd = function (err, results) {
                         if (err) console.warn("State Error "+err)

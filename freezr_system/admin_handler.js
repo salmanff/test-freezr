@@ -123,7 +123,7 @@ exports.generateAdminPage = function (req, res) {
         if (!initial_query_func || isPublicPage) {
           file_handler.load_data_html_and_page(res,options)
         } else {
-          req.header('Authorization') = 'IntReq '+results.app_token // internal query request
+          req.params.internal_query_token = results.app_token // internal query request
           req.freezrInternalCallFwd = function(err, results) {
             if (err) {
               options.success = false;
