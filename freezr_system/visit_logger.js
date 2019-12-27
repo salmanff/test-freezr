@@ -308,7 +308,7 @@ function get_app_name(req, options) {
 	if (req.originalUrl.split('?')[0] == "/") return "root"
 	var parts = req.originalUrl.split('?')[0].split("/");
 	const PARTS2URLS =  ['app_files', 'apps', 'v1']
-	const PARTS1URLS =  ['allmydata', 'favicon.ico', 'ppage', 'papp', 'account', 'login', 'admin']
+	const PARTS1URLS =  ['appdata', 'favicon.ico', 'ppage', 'papp', 'account', 'login', 'admin']
 
 	if (parts.length<2) return "account"
 	if (PARTS2URLS.indexOf (parts[1]) >-1 ) return parts[2].replace(/\./g,"_");

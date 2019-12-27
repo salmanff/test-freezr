@@ -214,7 +214,6 @@ const add_app_uses = function(){
         app.get('/apps/:app_name', appPageAccessRights, app_handler.generatePage);
         app.get('/apps/:app_name/static/:file', serveAppFile);
         app.get('/apps/:app_name/:page', appPageAccessRights, app_handler.generatePage);
-        app.get('/allmydata/:whattodo/:app_name', appPageAccessRights, app_handler.generateSystemDataPage);
         app.get('/favicon.ico', servePublicAppFile)
 
     // public
@@ -236,14 +235,16 @@ const add_app_uses = function(){
 
 
     // permissions
-        app.put('/v1/permissions/setobjectaccess/:requestor_app/:source_app_code/:permission_name', userLoggedInRights, app_handler.setObjectAccess);
-        app.put('/v1/permissions/change/:requestee_app/:source_app_code', userLoggedInRights, account_handler.changeNamedPermissions);
-        app.get('/v1/permissions/getall/:requestee_app/:source_app_code', userDataAccessRights, account_handler.all_app_permissions);
+        app.put('/v1/permissions/setobjectaccess/:requestor_app/:permission_name', userLoggedInRights, app_handler.setObjectAccess);
+        app.put('/v1/permissions/change/:requestee_app', userLoggedInRights, account_handler.changeNamedPermissions);
+        app.get('/v1/permissions/getall/:requestee_app', userDataAccessRights, account_handler.all_app_permissions);
+        app.get('/v1/permissions/groupall/:requestee_app', userDataAccessRights, account_handler.all_app_permissions);
+        app.get('/v1/permissions/gethtml/:requestee_app', userDataAccessRights, account_handler.generatePermissionHTML);
         // todo & review / redo app.put('/v1/permissions/setfieldaccess/:requestor_app/:source_app_code/:permission_name', userDataAccessRights, app_handler.setFieldAccess);
         // todo & review / redoapp.get('/v1/permissions/getfieldperms/:requested_type/:requestor_app/:source_app_code', userDataAccessRights, app_handler.getFieldPermissions)
 
     // developer utilities
-        app.get('/v1/developer/config/:app_name/:source_app_code',userLoggedInRights, app_handler.getConfig);
+        app.get('/v1/developer/config/:app_name',userLoggedInRights, app_handler.getConfig);
         app.get('/v1/developer/fileListUpdate/:app_name/:source_app_code', userLoggedInRights, app_handler.updateFileList);
         app.get('/v1/developer/fileListUpdate/:app_name/:source_app_code/:folder_name', userLoggedInRights, app_handler.updateFileList);
 
@@ -251,15 +252,17 @@ const add_app_uses = function(){
         app.get ('/account/logout', addVersionNumber, account_handler.logout_page);
         app.get ('/account/login', addVersionNumber, account_handler.generate_login_page);
         app.get ('/login', addVersionNumber, account_handler.generate_login_page);
-        app.get ('/account/applogin/login/:app_name', addVersionNumber, account_handler.generate_login_page);
+        app.get('/account/appdata/:app_name/:action', appPageAccessRights, account_handler.generateSystemDataPage);
+        app.get ('/account/:page/:requestee_app', appPageAccessRights, account_handler.generateAccountPage); // for "perms"
         app.get ('/account/:page', appPageAccessRights, account_handler.generateAccountPage);
 
         app.get('/v1/account/ping', addVersionNumber, account_handler.ping);
         app.post('/v1/account/login', addVersionNumber, account_handler.login);
         app.post('/v1/account/applogin', addVersionNumber, account_handler.login);
         app.post('/v1/account/applogout', addVersionNumber, account_handler.app_logout);
-        app.get('/v1/account/generateapppassword', addVersionNumber, account_handler.generate_onetime_app_password);
         app.put ('/v1/account/changePassword.json', userLoggedInRights, account_handler.changePassword);
+        app.get('/v1/account/apppassword/generate', addVersionNumber, account_handler.app_password_generate_one_time_pass);
+        app.get('/v1/account/apppassword/updateparams', addVersionNumber, account_handler.app_password_update_params);
         app.put ('/v1/account/app_install_from_zipfile.json', userLoggedInRights, installAppFromZipFile);
         app.post ('/v1/account/app_install_from_url.json', userLoggedInRights, addVersionNumber, account_handler.get_file_from_url_to_install_app);
         app.post ('/v1/account/app_install_blank', userLoggedInRights, addVersionNumber, account_handler.install_blank_app);
@@ -308,7 +311,7 @@ const add_app_uses = function(){
 
     // CEPS
         app.post('/ceps/app_token', addVersionNumber, account_handler.login_for_app_token);
-        app.post('/ceps/write/:app_name/', userDataAccessRights, app_handler.write_data);
+        app.post('/ceps/write/:app_name', userDataAccessRights, app_handler.write_data);
         app.post('/ceps/write/:app_name/:collection', userDataAccessRights, app_handler.write_data);
         app.post('/ceps/write/:app_name/:collection/:user_id', userDataAccessRights, app_handler.write_data);
         app.post('/ceps/query/:requestor_app', userDataAccessRights, app_handler.db_query);
@@ -317,9 +320,10 @@ const add_app_uses = function(){
         app.get('/ceps/get/:requestee_app/:collection_name/:data_object_id', userDataAccessRights, app_handler.getDataObject);
         app.get('/ceps/userfile/:requestee_app/:user_id/*', userDataAccessRights, app_handler.getDataObject);
         app.put('/ceps/upload/:app_name',userDataAccessRights, uploadFile);
-                // "/ceps/userfile/"+requestee_app+"/"+fileId+(permission_name?("?permission_name"=permission_name):"");
-            app.get('/v1/userfiles/:permission_name/:collection_name/:requestor_app/:source_app_code/:requestee_app/:user_id/*', userDataAccessRights, app_handler.getDataObject); // collection_name is files
-        // db
+    // userfiles
+        app.get('/v1/userfileGetToken/:requestor_app/:permission_name/:requestee_app/:user_id/*', userDataAccessRights, app_handler.getFileToken); // collection_name is files
+
+        app.get('/v1/userfiles/:user_id/:requestee_app/*', app_handler.sendUserFile); // collection_name is files
 
 
     // default redirects
@@ -337,6 +341,11 @@ const add_app_uses = function(){
             res.redirect( redirect_url);
             res.end();
         });
+        app.get('/v1/*', function (req, res) {
+            helpers.log(req,"unknown api url "+req.url)
+            visit_logger.record(req, freezr_environment, freezr_prefs);
+            helpers.send_failure(res, helpers.error("invalid api url:",req.path), "server.js", VERSION, "server");
+        })
         app.get('*', function (req, res) {
             helpers.log(req,"unknown url redirect: "+req.url)
             visit_logger.record(req, freezr_environment, freezr_prefs, {source:'redirect'});

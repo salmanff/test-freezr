@@ -1,5 +1,5 @@
-/* 
-freezr accounts allmydata_backup.js
+/*
+freezr accounts accpunt_appdata_backup.js
 
 
 This functionality page is incomplete.... Major clean up needed...
@@ -11,29 +11,29 @@ To add upload options:
 	- add a rules for ignoring uploads: eg fj:deleted,true
 	- only add new records
 
-    'pages':{
-        'allmydata_view': {
-            "page_title":"View all my data for "+req.params.app_name,
-            "html_file":"info.freezr.public/allmydata_view.html",
-            "css_files": ["info.freezr.public/allmydata_view.css"],
-            "script_files": ["info.freezr.public/allmydata_view.js","info.freezr.public/FileSaver.js"]
-        }
+	'appdata_view': {
+			page_title:"View all my data ",
+			page_url: "account_appdata_view.html",
+			css_files: ["account_appdata_view.css"],
+			script_files: ["account_appdata_view.js","FileSaver.js"]
+	},
+
 */
 
 const retrieve_COUNT = 200;
 const FILE_SIZE_MAX = 2000000;
 
 var dl = {  // download file structure
-			'meta': { 
+			'meta': {
 				'user':null,
 				'app_name':null,
 				'date':new Date().getTime(),
-				'source':"allmydata_backup",
+				'source':"appdata_backup",
 				'all_collection_names': [],
 				'app_config': null
 				},
 		  	'current_collection':{ // temporary fields - can be ignored
-			  	'part':1,		  	
+			  	'part':1,
 				'retrieved_all':false,
 			},
 			'collections': [
@@ -47,9 +47,9 @@ var dl = {  // download file structure
 		}
 
 freezr.initPageScripts = function() {
-	document.getElementById('app_name').innerHTML= freezr_app_name;
+	document.getElementById('app_name').innerHTML= app_name;
 	document.getElementById('freezr_user_id').innerHTML= freezr_user_id;
-	document.getElementById("backToApp").onclick = function() {window.open("/apps/"+freezr_app_name,"_self");}
+	document.getElementById("backToApp").onclick = function() {window.open("/apps/"+app_name,"_self");}
 	document.getElementById("freezrHome").onclick = function() {window.open("/","_self");}
 	document.getElementById("addAllRecords").onclick = function() {addAllRecords()};
 	document.getElementById("addAllFiles").onclick = function() {addAllFiles()};
@@ -60,10 +60,10 @@ freezr.initPageScripts = function() {
 	document.getElementById("getAndSaveData").onclick = function () {getAndSaveData();}
 	document.getElementById("uploadAndRestoreData").onclick = function () {uploadAndRestoreData();}
 
-	dl.meta.app_name=freezr_app_name;
+	dl.meta.app_name=app_name;
 	dl.meta.user=freezr_user_id;
 
-	freezr.utils.getConfig(function(configReturn) {
+	freezr.utils.getConfig(app_name, function(configReturn) {
 		if (configReturn.error ) {
 			showWarning("Error connecting to server - try later.");
 			hideElments();
@@ -101,11 +101,12 @@ var getAndSaveData = function () {
 }
 var retrieve_data = function() {
 	var queryOptions = {
+		app_name:app_name,
 		collection:dl.collections[0].name,
 		count:retrieve_COUNT,
-		query_params: {'_date_Modified':{'$lt':dl.collections[0].last_retrieved_date}} 
+		query_params: {'_date_Modified':{'$lt':dl.collections[0].last_retrieved_date}}
 	}
-	freezr.db.query(queryOptions, gotData)	
+	freezr.db.query(queryOptions, gotData)
 }
 var gotData = function(returnJson) {
 	returnJson = freezr.utils.parse(returnJson);
@@ -115,12 +116,12 @@ var gotData = function(returnJson) {
 		if (dl.collections[0].data.length==0) {showWarning(null); showWarning("No data found in that collection");addStatus("refresh page to try again")} else {endRetrieve();}
 	} else {
 		dl.current_collection.retrieved_all = (returnJson.results.length<retrieve_COUNT);
-		
+
 		dl.collections[0].data = dl.collections[0].data.concat(returnJson.results);
 		dl.collections[0].last_retrieved_date = dl.collections[0].data[dl.collections[0].data.length-1]._date_Modified;
 		addStatus("got "+returnJson.results.length+" records for a total of "+dl.collections[0].data.length)
 		var showdate = new Date(dl.collections[0].data[dl.collections[0].data.length-1]._date_Modified)
-		
+
 		if (dl.current_collection.retrieved_all || JSON.stringify(dl.collections[0].data).length >FILE_SIZE_MAX) {
 			var fileName = saveData();
 			var lastDate = new Date(dl.collections[0].last_retrieved_date);
@@ -129,7 +130,7 @@ var gotData = function(returnJson) {
 			dl.collections[0].first_retrieved_date = dl.collections[0].last_retrieved_date;
 			dl.current_collection.part++
 			dl.collections[0].data=[];
-		} 
+		}
 		if (!dl.current_collection.retrieved_all) {
 			retrieve_data();
 		} else {
@@ -145,11 +146,11 @@ var endRetrieve = function() {
 var saveData = function() {
 	// codepen.io/davidelrizzo/pen/cxsGb
 	var text = JSON.stringify(dl);
-	var filename = "freezr data backup "+freezr_app_name+" coll "+dl.collections[0].name+" user "+freezr_user_id+" "+dl.meta.date+" part "+dl.current_collection.part+".json";
+	var filename = "freezr data backup "+app_name+" coll "+dl.collections[0].name+" user "+freezr_user_id+" "+dl.meta.date+" part "+dl.current_collection.part+".json";
 	var blob = new Blob([text], {type: "text/plain;charset=utf-8"});
 	saveAs(blob, filename);
 	return filename;
-} 
+}
 
 var uploader = {
 	current_file_num:null,
@@ -169,14 +170,14 @@ var uploader = {
 		KeepUpdateIds:true
 	}
 };
-		
+
 
 var uploadAndRestoreData = function() {
 	var files = document.getElementById("fileUploader").files;
 	if (!files || files.length == 0) {
 		showWarning("Please choose a file to import");
 	} else {
-		if (freezr_app_name=="info.freezr.permissions") {
+		if (app_name=="info.freezr.permissions") {
 			dl.password = prompt("Please enter your password")
 		}
 
@@ -191,20 +192,20 @@ var processNextFile = function() {
 	uploader.ok_to_process_all_records= uploader.ok_to_process_all_files;
 
 	if (file) {
-		
+
 		uploader.current_collection_num=0;
 		uploader.current_record=-1;
 
 
-		var reader = new FileReader()	
+		var reader = new FileReader()
 		reader.readAsText(file, "UTF-8");
 		reader.onload = function (evt) {
 			uploader.file_content= JSON.parse(evt.target.result);
 			var doUpload = true;
 			addStatus("Handling file: "+file.name);
 
-			if (freezr_app_name !=uploader.file_content.meta.app_name && !uploader.override_difference.app_name) {
-				if (confirm("Data from the file '"+file.name+"' came from the the app "+uploader.file_content.meta.app_name+" but you are uploading it to the app "+freezr_app_name+". Are you sure you want to proceed?")) {
+			if (app_name !=uploader.file_content.meta.app_name && !uploader.override_difference.app_name) {
+				if (confirm("Data from the file '"+file.name+"' came from the the app "+uploader.file_content.meta.app_name+" but you are uploading it to the app "+app_name+". Are you sure you want to proceed?")) {
 					uploader.override_difference.app_name=true;
 				} else {
 					doUpload= false
@@ -233,7 +234,7 @@ var processNextFile = function() {
 		showWarning("No files to upload");
 	}
 }
-//var transformRecord = null; 
+//var transformRecord = null;
 var existingPurls = [];
 
 var transformRecord =  function(aRecord) {
@@ -263,19 +264,19 @@ var transformRecord =  function(aRecord) {
 	};
 	if (aRecord.path) {delete aRecord.path}
 
-	if (dl.meta.app_config.collections && 
-		dl.meta.app_config.collections[uploader.file_content.collections[uploader.current_collection_num].name] && 
+	if (dl.meta.app_config.collections &&
+		dl.meta.app_config.collections[uploader.file_content.collections[uploader.current_collection_num].name] &&
 		dl.meta.app_config.collections[uploader.file_content.collections[uploader.current_collection_num].name].make_data_id ) {
 	} else {
 		delete aRecord._id;
 	}*/
-	/* 
-	if (aRecord._creator){ 
+	/*
+	if (aRecord._creator){
 		delete aRecord._creator
 		aRecord._owner = freezr_user_id;
 	}
 	*/
-	return aRecord;	
+	return aRecord;
 };
 
 var askToProcessNextRecord = function() {
@@ -289,9 +290,9 @@ var askToProcessNextRecord = function() {
 	if (noMoreCollections){
 		processNextFile();
 	} else {
-		
+
 		var thisRecord = uploader.file_content.collections[uploader.current_collection_num].data[uploader.current_record];
-		
+
 		if (uploader.ok_to_process_all_records) {
 			processNextRecord();
 		} else if (!thisRecord) {
@@ -330,26 +331,27 @@ var processNextRecord = function() {
 		}
 		if (thisRecord) {
 			var uploadOptions = {
+				app_name:app_name,
 				password: dl.password,
 				KeepUpdateIds : uploader.options.KeepUpdateIds, // todo - to change
-				updateRecord: (uploader.options.KeepUpdateIds), 
+				updateRecord: (uploader.options.KeepUpdateIds),
 				data_object_id: (uploader.options.KeepUpdateIds? (thisRecord._id+""):null),
 				restoreRecord:true,
 				collection : uploader.file_content.collections[uploader.current_collection_num].name
 			}
-			if (dl.meta.app_config && dl.meta.app_config.collections && 
-				uploader.file_content && 
-				dl.meta.app_config.collections[uploader.file_content.collections[uploader.current_collection_num].name] && 
+			if (dl.meta.app_config && dl.meta.app_config.collections &&
+				uploader.file_content &&
+				dl.meta.app_config.collections[uploader.file_content.collections[uploader.current_collection_num].name] &&
 				dl.meta.app_config.collections[uploader.file_content.collections[uploader.current_collection_num].name].make_data_id) {
 			} else {
 				// delete thisRecord._id;
 			}
-	
+
 			//onsole.log("uploading "+thisRecord.url+" with options "+JSON.stringify(uploadOptions) )
-		
+
 			freezr.db.write (
-				thisRecord, 
-				uploadOptions, 
+				thisRecord,
+				uploadOptions,
 				function (returnData) {
 					returnData = freezr.utils.parse(returnData);
 					if (returnData.error) {
@@ -376,7 +378,7 @@ var hideElments = function(){
 	document.getElementById("getAndSaveData").style.display="none";
 }
 var addStatus = function(aText) {
-	document.getElementById("backup_status").innerHTML=aText+"<br/>"+document.getElementById("backup_status").innerHTML;	
+	document.getElementById("backup_status").innerHTML=aText+"<br/>"+document.getElementById("backup_status").innerHTML;
 }
 
 // Generics
@@ -389,5 +391,5 @@ var showWarning = function(msg) {
 		if (newText && newText!=" ") newText+="<br/>";
 		newText += msg;
 		document.getElementById("warnings").innerHTML= newText;
-	} 
+	}
 }

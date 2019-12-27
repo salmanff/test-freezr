@@ -12,7 +12,6 @@ body{
 	border: 2px solid #f1f1f1;
 	min-width:300px;
 	width:100%;
-	max-width: 600px;
 	padding-top: 5px;
 	padding-bottom: 5px;
 	margin-bottom: 20px;
@@ -32,9 +31,22 @@ body{
 	padding:5px;
 	text-align: center;
 	margin-top:-5px;
+	margin-left: 10px;
+}
+.emptybutt {
+	width: 40px;
+	height:55px;
+	font-size: 12px;
+	padding:5px;
+	margin-top:-5px;
+	margin-left: 10px;
 }
 .blue {
 	color:blue;
+}
+.red {
+	color:red;
+	border-color: red;
 }
 .right{
 	float: right;
@@ -100,4 +112,30 @@ body{
 }
 .texttop {
 	vertical-align: top;
+}
+#perms_dialogue {
+	position: absolute;
+	width: 400px;
+	padding:5px;
+	background-color: white;
+	border-radius:10px;
+	border:2px grey solid;
+	display: none;
+}
+#appPasswordForApp {
+	font-weight: bold;
+	color:darkblue;
+}
+#button_addAppInFolder {
+	margin:10px;
+}
+#numdaysvalid {
+	border:1px dotted grey;
+	padding: 2px;
+	text-align: center;
+  width: 50px;
+}
+#perm_warning {
+	color:red;
+	font-weight: bold;
 }

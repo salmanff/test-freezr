@@ -38,10 +38,10 @@ freezr.db.write = function(data, options, callback) {
   const contentType='application/json';
   const postData= JSON.stringify({'data':data, 'options':options});
   const collection =  (options && options.collection)? options.collection:"main";
+  const app_to_upload = (options.restoreRecord && freezr_app_name=="info.freezr.account")? options.app_name : freezr_app_name;
 
-  const url= "/ceps/write/"+freezr_app_name+"/"+collection
+  const url= "/ceps/write/"+app_to_upload+"/"+collection
 
-  console.log("posting to url "+url+" postdata "+JSON.stringify(postData))
   freezer_restricted.connect.send(url, postData, callback, "POST", contentType);
 };
 freezr.db.upload = function(file, options, callback ) {
@@ -83,9 +83,7 @@ freezr.db.query = function(options, callback) {
     // only_others excludes own records
 
   if (!options) options = {};
-  var url = '/ceps/query/'+freezr_app_name;
-
-  console.log("Sending query with options", options)
+  var url = '/ceps/query/'+(options.app_name || freezr_app_name);
 
   if (options.app_name && options.app_name == "info.freezr.admin") url='/v1/admin/dbquery/'+options.collection
   freezer_restricted.connect.send(url, JSON.stringify(options), callback, 'POST', 'application/json');
@@ -118,15 +116,8 @@ freezr.db.publicquery = function(options, callback) {
 // Permissions and file permissions
 freezr.perms.getAllAppPermissions = function(callback) {
   // gets a list of permissions granted - this is mainly called on my freezr_core, but can also be accessed by apps
-  var url = '/v1/permissions/getall/'+freezr_app_name+'/'+freezr_app_code;
+  var url = '/v1/permissions/groupall/'+freezr_app_name;
   freezer_restricted.connect.read(url, null, callback);
-}
-freezr.perms.generateAppPassword = function(app_name, options, callback) {
-  // gets a random app-specific password
-  //onsole.log('generating app pass for '+app_name)
-  var url = '/v1/account/generateapppassword';
-  options = options || {expiry: null}
-  freezer_restricted.connect.read(url, {app_name: app_name, expiry:options.expiry}, callback);
 }
 freezr.perms.isGranted = function(permission_name, callback) {
   // see if a permission has been granted by the user - callback(isGranted)
@@ -140,30 +131,11 @@ freezr.perms.isGranted = function(permission_name, callback) {
     callback(isGranted)
   } );
 }
-freezr.perms.setFieldAccess = function(options, callback) {
-  // todo - Currently not functional
-  // can give specific people access to fields with specific values - eg myHusband can be given to all "album" fields whose value is "ourVacationAlbum2014"
-  // field name and value are needed for field_delegate type permissions but unnecessary for foler_delegate permissions
-  // permission_name is the permission_name under which the field is being
-
-  var url = '/v1/permissions/setfieldaccess/'+freezr_app_name+'/'+freezr_app_code+'/'+permission_name;
-  if (!options) {options  =
-      { //'action': 'grant' or 'deny' // default is grant
-        //'field_name': 'albums', // field name of value
-        //'field_value':'ourVacationAlbum2014' // gives access to
-        // can have one of:  'shared_with_group':'logged_in' or 'shared_with_user':a user id
-        // 'requestee_app': app_name (defaults to self)
-       }
-      }
-  if (!options.action) {options.action = "grant";}
-
-  freezer_restricted.connect.write(url, options, callback);
-}
 freezr.perms.setObjectAccess = function(permission_name, idOrQuery, options, callback) {
   // gives specific people access to a specific object
   // permission_name is the permission_name under which the field is being
 
-  var url = '/v1/permissions/setobjectaccess/'+freezr_app_name+'/'+freezr_app_code+'/'+permission_name;
+  var url = '/v1/permissions/setobjectaccess/'+freezr_app_name+'/'+permission_name;
   if (!options) {options  =
       { //'action': 'grant' or 'deny' // default is grant
         // can have one of:  'shared_with_group':'logged_in' or 'public' or 'shared_with_user':a user id
@@ -176,7 +148,7 @@ freezr.perms.setObjectAccess = function(permission_name, idOrQuery, options, cal
       }
   if (!options.action) {options.action = "grant";}
   if (!idOrQuery) {
-    callback({'error':'must incude object id or a seearch query'})
+    callback({'error':'must incude object id or a search query'})
   } else {
     if (typeof idOrQuery == "string") options.data_object_id = idOrQuery;
     if (typeof idOrQuery == "object") options.query_criteria = idOrQuery;
@@ -184,22 +156,6 @@ freezr.perms.setObjectAccess = function(permission_name, idOrQuery, options, cal
     freezer_restricted.connect.write(url, options, callback);
   }
 }
-freezr.perms.listOfFieldsIvegrantedAccessTo = function(options, callback) {
-  // todo - Currently not functional
-  // returns list of folders (or field names) the app has given access to on my behalf.
-  // options: permission_name, collection, field_name, field_value, shared_with_group, shared_with_user, granted
-  var url = '/v1/permissions/getfieldperms/ihavegranted/'+freezr_app_name+'/'+freezr_app_code+'/';
-  freezer_restricted.connect.read(url, options, callback);
-}
-freezr.perms.allFieldsIHaveAccessTo = function(options , callback) {
-  // todo - Currently not functional
-  // returns list of folders (or field names) user has been given access to (excluding subfolders) by other users
-  // options: permission_name, collection, requestee_app, action,  _owner,
-  // target_app???
-  var url = '/v1/permissions/getfieldperms/ihaveccessto/'+freezr_app_name+'/'+freezr_app_code+'/';
-  freezer_restricted.connect.read(url, options, callback);
-}
-
 
 // PROMISES create freezr.promise based on above
 freezr.promise= {db:{},perms:{}}
@@ -228,18 +184,19 @@ freezr.utils.updateFileList = function(folder_name, callback) {// Currently NOT 
   //onsole.log("fileListUpdate Sending to "+url)
   freezer_restricted.connect.read(url, null, callback);
 }
-freezr.utils.getConfig = function(callback) {
+freezr.utils.getConfig = function(app_name, callback) {
   // This is for developers mainly. I retrieves the app_config file and the list of collections which haev been used
   //app.get('/v1/developer/config/:app_name/:source_app_code',userDataAccessRights, app_handler.getConfig);
   // it returns: {'app_config':app_config, 'collection_names':collection_names}, where collection_names are the collection_names actually used, whether they appear in the app_config or not.
 
-  var url = '/v1/developer/config/'+freezr_app_name+'/'+freezr_app_code;
+  if (!app_name) app_name = freezr_app_name
+  var url = '/v1/developer/config/'+app_name;
   //onsole.log("fileListUpdate Sending to "+url)
   freezer_restricted.connect.read(url, null, callback);
 }
 freezr.utils.ping = function(options, callback) {
   // pings freezr to get back logged in data
-  // options can be password and app_name
+  // options can be password and app_name (Not functional)
   var url = '/v1/account/ping';
   freezer_restricted.connect.read(url, options, callback);
 
@@ -257,9 +214,11 @@ freezr.utils.logout = function() {
       } else {
         freezr_app_code = null;
         freezr_app_token = null;
+        document.cookie = 'app_token_'+freezr_user_id+'='
         freezr_user_id = null;
         freezr_server_address= null;
         freezr_user_is_admin = false;
+
         if (freezr.app.logoutCallback) freezr.app.logoutCallback(resp);
       }
     });
@@ -279,30 +238,35 @@ freezr.utils.getAllAppList = function(callback) {
   freezer_restricted.connect.read('/v1/account/app_list.json', null, callback)
 }
 freezr.utils.filePathFromName = function(fileName, options) {
-  // options are permission_name, requestee_app AND user_id
-  // returns the full file path based on the name of a file so it can be referred to in html. (fileName can include subfolders in user directory)
-  var user_id = (options && options.user_id)? options.user_id : freezr_user_id;
-  if (! fileName ) return null
-  else return freezr.utils.filePathFromId(user_id +"/"+fileName, options)
+  console.warn("DEPRECTAED filePathFromId")
 }
 freezr.utils.filePathFromId = function(fileId, options) {
-  // returns the file path based on the file id so it can be referred to in html.
-  // options are permission_name, requestee_app
-  if (!fileId) return null;
-  var permission_name = (options && options.permission_name)? options.permission_name : null;
-  var requestee_app   = (options &&   options.requestee_app)?  options.requestee_app   : freezr_app_name;
-  if (freezr.utils.startsWith(fileId,"/")) fileId = fileId.slice(1);
-  return "/ceps/userfile/"+requestee_app+"/"+fileId+"?filetoken="+filetoken+(permission_name?("permission_name="+permission_name):"");
+  console.warn("DEPRECTAED filePathFromId")
 }
-freezr.utils.setFilePath = function(el,attr,fileId, options){
+freezr.utils.userfile = function(user_id,fileName) {return user_id +"/"+fileName}
+freezr.utils.setFilePath = function(imgEl, attr, fileId, options){
+  if (!options) options={}
+  options.requestee_app   =   options.requestee_app || freezr_app_name;
+  options.permission_name =   options.permission_name || "self";
   if (!fileId) return null;
-  var permission_name = (options && options.permission_name)? options.permission_name : null;
-  var requestee_app   = (options &&   options.requestee_app)?  options.requestee_app   : freezr_app_name;
   if (freezr.utils.startsWith(fileId,"/")) fileId = fileId.slice(1);
-  // WIP - to be completed 2019
+  freezr.utils.getFileToken(fileId, options, function (fileToken) {
+    imgEl[attr] =  "/v1/userfiles/"+options.requestee_app+"/"+fileId+"?fileToken="+fileToken+(options.permission_name ?("&permission_name="+options.permission_name):"");
+  })
 }
-freezr.utils.getFileToken = function(el,attr,fileId, options){
+freezr.utils.getFileToken = function(fileId, options, callback){
  // WIP - to be completed 2019
+ // check if exists - if not, check permissions and send back a token and keep a list of tokens
+ // return token
+ options.requestee_app   =   options.requestee_app || freezr_app_name;
+ options.permission_name =   options.permission_name || "self";
+
+ let url = '/v1/userfileGetToken/'+freezr_app_name+'/'+ (options.permission_name || "self")+'/' + options.requestee_app+'/'+fileId
+ freezer_restricted.connect.read(url, null, (resp) => {
+    resp=freezr.utils.parse(resp)
+    callback (resp.fileToken)
+ });
+
 }
 freezr.utils.publicPathFromId = function(fileId, requestee_app) {
   // returns the public file path based on the file id so it can be referred to in html.
@@ -328,7 +292,6 @@ freezr.utils.getCookie = function(cname) {
     while (c.charAt(0) == ' ') {
       c = c.substring(1);
     }
-    console.log("check ",c)
     if (c.indexOf(name) == 0) {
       return c.substring(name.length, c.length);
     }
@@ -375,7 +338,6 @@ That's why they are called "restricted"
 They are for internal purposes only
 
 ==================================================================    */
-
 freezer_restricted.utils = freezr.utils;
 freezer_restricted.connect= {};
 freezer_restricted.menu = {};
@@ -425,20 +387,16 @@ freezer_restricted.permissions= {};
       } catch (e) {
      		badBrowser = true;
       }
-      if (!freezr.app.isWebBased && freezr_server_address) {url = freezr_server_address+url;}
 
-      let freezr_app_token = freezr.utils.getCookie('app_token_'+freezr_user_id)
-      console.log("freezer_restricted.connect.send",freezr_app_token, url)
+      const PATHS_WO_TOKEN=['/ceps/app_token','/v1/account/ping','/v1/admin/first_registration']
       if (badBrowser) {
       	callback({"error":true, "message":"You are using a non-standard browser. Please upgrade."});
       } else if (!freezer_restricted.connect.authorizedUrl(url, method)) {
         callback({"error":true, "message":"You are not allowed to send data to third party sites like "+url});
-      } else if (url.indexOf('ceps')>-1 && // temprary - to remove once fully implemented - console 2019
-                 (!freezr_app_token && url.indexOf('ceps/app_token')<0)){
-                   console.log(url)
-        callback({"error":true, "message":"Need to obtain an app token before sending data "});
+      } else if (!freezr_app_token && !freezr.utils.getCookie('app_token_'+freezr_user_id) && PATHS_WO_TOKEN.indexOf(url)<0){
+        callback({"error":true, "message":"Need to obtain an app token before sending data to "+url});
       } else {
-        console.log("sending url "+url)
+        if (!freezr.app.isWebBased && freezr_server_address) {url = freezr_server_address+url;}
         req.open(method, url, true);
         if (!freezr.app.isWebBased && freezr_server_address) {
           req.withCredentials = true;
@@ -447,7 +405,7 @@ freezer_restricted.permissions= {};
         req.onreadystatechange = function() {
           if (req && req.readyState == 4) {
               var jsonResponse = req.responseText;
-              console.log("AT freeezr level status "+this.status+" resp"+req.responseText)
+              //onsole.log("AT freezr - status "+this.status+" resp"+req.responseText)
               jsonResponse = jsonResponse? jsonResponse : {"error":"No Data sent from servers", "errorCode":"noServer"};
               if (this.status == 200 || this.status == 0) {
     				    callback(jsonResponse);
@@ -460,7 +418,9 @@ freezer_restricted.permissions= {};
             }
         };
         if (contentType) req.setRequestHeader('Content-type', contentType);
-        req.setRequestHeader ('Authorization','Bearer '+freezr_app_token)
+        req.setRequestHeader ('Authorization','Bearer '+ (freezr.app.isWebBased?freezr.utils.getCookie('app_token_'+freezr_user_id): freezr_app_token ))
+        //req.setRequestHeader ('Authorization','Bearer '+freezr.utils.getCookie('app_token_'+freezr_user_id) )
+
         req.send(postData)
       }
   }
@@ -475,52 +435,10 @@ freezer_restricted.permissions= {};
   	}
   }
 
-// PERMISSIONS - BASE FUNCTIONS GRANTING PERMISSIONS
-  freezer_restricted.permissions.change = function(buttonId, permission_name, permission_object) {
-    //onsole.log("CHANGE id"+buttonId+" permission_name"+permission_name+" "+ JSON.stringify(permission_object));
-    //  {"description":"Player Recent Scores","app_name":null,"collection":"scores","search_fields":null,"sort_fields":{"_date_created":1},"count":1,"return_fields":["score","_owner","_date_created"],"sharable_groups":"logged_in"}
-    var theButt = document.getElementById(buttonId);
-    if (theButt.className == "freezer_butt") {
-      theButt.className = "freezer_butt_pressed";
-      var action = theButt.innerHTML;
-      theButt.innerHTML = ". . .";
-      var url = '/v1/permissions/change/'+freezr_app_name+'/'+freezr_app_code;
-      var sentData = {'changeList':[{'action':action, 'permission_name':permission_name, 'permission_object':permission_object, 'buttonId':buttonId}]};
-      freezer_restricted.connect.write(url, sentData, freezer_restricted.permissions.changePermissionCallBack);
-    }
-  }
-  freezer_restricted.permissions.changePermissionCallBack = function(returnJson) {
-    //onsole.log('permission Callback '+JSON.stringify(returnJson));
-    returnJson = freezer_restricted.utils.parse(returnJson);
-    var theButt = (returnJson && returnJson.buttonId)? document.getElementById(returnJson.buttonId) : null;
-    if (theButt) {
-      if (returnJson.success) {
-        if (returnJson.action == "Accept") {
-          theButt.innerHTML = "Now Accepted"
-        } else if (returnJson.action == "Deny") {
-          theButt.innerHTML = "Now Denied";
-          if ((returnJson.flags && returnJson.flags.major_warnings && returnJson.flags.major_warnings.length>0) || returnJson.aborted)  {
-            theButt.nextSibling.style.color = "red";
-            theButt.nextSibling.innerHTML = "Note: There were some SERIOUS errors removing permissions from data already marked as permitted. "
-          } else if (returnJson.flags && returnJson.flags.minor_warnings_data_object && returnJson.flags.minor_warnings_data_object.length>0) {
-            theButt.nextSibling.style.color = "red";
-            theButt.nextSibling.innerHTML = "There were some data inconsistencies found when removing permissions from data already marked as permitted. "
-          }
-        }
-      } else {
-        theButt.innerHTML = "Error";
-        theButt.nextSibling.innerHTML = "There was an error changing this permission - please try again later"
-      }
-    } else {
-      var mainEl = document.getElementById("freezer_dialogueInnerText");
-      if (mainEl) mainEl.innerHTML = "Error communicating with server. <br/>"+((returnJson && returnJson.error)? returnJson.error : "")
-    }
-  }
 
 // MENU - BASE FUNCTIONS SHOWING THEM WHEN THE FREEZR ICON (top right of each app) IS PRESSEDFreeezer Dialogie HTML
   freezer_restricted.menu.hasChanged = false;
   freezer_restricted.menu.addFreezerDialogueElements = function(){
-
     //onsole.log("addFreezerDialogueElements")
     var freezerMenuButt = document.createElement('img');
     freezerMenuButt.src = freezr.app.isWebBased? "/app_files/info.freezr.public/static/freezer_log_top.png": "./freezrPublic/static/freezer_log_top.png";
@@ -553,13 +471,6 @@ freezer_restricted.permissions= {};
       elDialogueHomeButt.innerHTML="freezr home";
       elDialogueHomeButt.onclick = function (evt) {window.open("/account/home","_self");};
       elDialogueInner.appendChild(elDialogueHomeButt);
-
-      var elDialogueDataViewButt = document.createElement('div');
-      elDialogueDataViewButt.className="freezer_butt";
-      elDialogueDataViewButt.id="freezer_dialogue_viewDataButt";
-      elDialogueDataViewButt.innerHTML="App data";
-      elDialogueDataViewButt.onclick = function (evt) {window.open(("/allmydata/view/"+freezr_app_name),"_self");};
-      elDialogueInner.appendChild(elDialogueDataViewButt);
     }
     var elDialogueInnerText = document.createElement('div');
     elDialogueInnerText.id = 'freezer_dialogueInnerText';
@@ -571,28 +482,30 @@ freezer_restricted.permissions= {};
       setTimeout(function(){
           document.getElementById('freezer_dialogueOuter').style.display="none";
       },400 )
-
-      document.getElementsByTagName("BODY")[0].style.overflow="auto";
+      var bodyEl = document.getElementsByTagName("BODY")[0]
+      if (bodyEl) {bodyEl.style.overflow = "visible"}
       freezr.onFreezrMenuClose(freezer_restricted.menu.hasChanged);
       freezer_restricted.menu.hasChanged = false;
   };
   freezer_restricted.menu.freezrMenuOpen = function() {
+    window.scrollTo(0,0);
     var innerEl = document.getElementById('freezer_dialogueInner');
 
+    freezer_restricted.menu.resetDialogueBox();
+    freezer_restricted.menu.hasChanged = true;
 
-    if (freezr.app.isWebBased && !freezr_app_token) { // app pages
-      freezer_restricted.menu.resetDialogueBox(true);
-      document.getElementById('freezer_dialogueOuter').style.display="block";
-      freezer_restricted.menu.addLoginInfoToDialogue('freezer_dialogueInnerText');
-
-      //window.open("/account/home","_self");
-    } else if (freezr_app_token  && (freezr.app.isWebBased || !freezr.app.offlineCredentialsExpired) ){
-        freezer_restricted.menu.resetDialogueBox();
-        freezr.perms.getAllAppPermissions(freezer_restricted.menu.show_permissions);
-        freezer_restricted.menu.hasChanged = true;
+    if (freezr.app.isWebBased ) { // app pages
+      freezer_restricted.menu.addLoginInfoToDialogue('freezer_dialogueInnerText',false);
+      if (freezr_app_name!="info.freezr.account" && freezr_app_name!="info.freezr.admin"){
+        freezer_restricted.menu.show_permissions();
+      }
+    } else if (freezr_app_token && !freezr.app.offlineCredentialsExpired) {
+      freezer_restricted.menu.addLoginInfoToDialogue('freezer_dialogueInnerText',true);
+      freezr.perms.getAllAppPermissions(freezer_restricted.menu.showOfflinePermissions);
+    } else if (freezer_restricted.menu.add_standAloneApp_login_dialogue) {
+        freezer_restricted.menu.add_standAloneApp_login_dialogue('freezer_dialogueInnerText')
     } else { // no app code, or offlineCredentialsExpired so its a stnad alone app
-        freezer_restricted.menu.resetDialogueBox();
-        freezer_restricted.menu.add_standAlonApp_login_dialogue('freezer_dialogueInnerText');
+        document.getElementById('freezer_dialogueInnerText').innerHTML ="Developer error: Please include the freezr_app_post_scripts.js file in your declarations.";
     }
 
   }
@@ -602,259 +515,72 @@ freezer_restricted.permissions= {};
     var dialogueEl = document.getElementById('freezer_dialogueOuter');
     if (dialogueEl) dialogueEl.style.display="block";
     var bodyEl = document.getElementsByTagName("BODY")[0]
-    if (bodyEl) bodyEl.style.overflow="hidden";
+    if (bodyEl) {
+        bodyEl.style.oldOverflow = bodyEl.style.overflow
+        bodyEl.style.overflow="hidden";}
     if (dialogueEl && bodyEl) dialogueEl.style.top = Math.round(bodyEl.scrollTop)+"px";
-    if (isAdminPage && document.getElementById("freezer_dialogue_viewDataButt")) document.getElementById("freezer_dialogue_viewDataButt").style.display= "none";
     if (document.getElementById('freezer_dialogueInner')) document.getElementById('freezer_dialogueInner').style["-webkit-transform"] = "translate3d(0, 0, 0)";
   }
-  freezer_restricted.menu.addLoginInfoToDialogue = function(aDivName) {
+
+  freezer_restricted.menu.show_permissions = function() {
+    var url = '/v1/permissions/gethtml/'+freezr_app_name;
+    freezer_restricted.connect.read(url, null, function(permHtml) {
+      permHtml = freezer_restricted.utils.parse(permHtml);
+      permHtml = permHtml.all_perms_in_html
+      document.getElementById('freezer_dialogueInnerText').innerHTML+=permHtml;
+      freezer_restricted.menu.replace_missing_logos();
+    });
+  }
+  freezer_restricted.menu.replace_missing_logos = function() {
+    //let imglist = document.getElementsByClassName("logo_img");
+    let imglistener = function(evt){
+      this.src="/app_files/info.freezr.public/static/freezer_logo_empty.png"
+      this.removeEventListener("error",imglistener);
+    }
+    Array.from(document.getElementsByClassName("logo_img")).forEach((anImg) => {
+      if (anImg.width<20) {
+        anImg.src="/app_files/info.freezr.public/static/freezer_logo_empty.png"
+      } else {
+        anImg.addEventListener("error", imglistener)
+      }
+    });
+  }
+
+  freezer_restricted.menu.addLoginInfoToDialogue = function(aDivName, addTitle) {
     var innerElText = document.getElementById(aDivName);
     if (innerElText) {
-        innerElText.innerHTML = "<div class='freezer_dialogue_topTitle'>"+(freezr_app_display_name? freezr_app_display_name:freezr_app_name)+"</div>";
-        innerElText.innerHTML+= (freezr_app_version?("<div>App version: "+freezr_app_version+"</div>"):"" )
+        innerElText.innerHTML = addTitle? ("<div class='freezer_dialogue_topTitle'>"+(freezr_app_display_name? freezr_app_display_name:freezr_app_name)+"</div>") : "<br/>";
         innerElText.innerHTML+= (freezr_user_id && freezr_server_address)? ("<i>Logged in as"+(freezr_user_is_admin? " admin ":" ")+"user: "+freezr_user_id+(freezr_server_address? (" on freezr server: "+freezr_server_address): "")+"</i>, version: "+freezr_server_version+"<br/>"):"<br/>You are not logged in";
-        if (!freezr.app.isWebBased && freezr_app_token){
+        innerElText.innerHTML +=  "<br/>";
+        innerElText.innerHTML+= (freezr_app_version?("<div>App version: "+freezr_app_version+"</div>"):"" )
+        if (!freezr.app.isWebBased){
             innerElText.innerHTML+= '<div align="center"><div class="freezer_butt" style="float:none; max-width:100px;" id="freezr_server_logout_butt">log out</div></div><br/>'
             setTimeout(function() { document.getElementById("freezr_server_logout_butt").onclick= function() {freezr.utils.logout(); } },10);
         }
     } else {console.warn("INTERNAL ERROR - NO DIV AT addLoginInfoToDialogue FOR "+aDivName)}
   }
-  freezer_restricted.menu.add_standAlonApp_login_dialogue = function(divToInsertInId) {
-    var divToInsertIn = document.getElementById(divToInsertInId);
-    if (document.getElementById("freezer_dialogue_viewDataButt")) document.getElementById("freezer_dialogue_viewDataButt").style.left=(parseInt(window.innerWidth/2)-30)+"px";
 
-    var cont = "";
-    cont+= '<div align="center">'
-    cont+= '<div id="freezr_server_server_name_area">'
-      cont+= '<div class="freezer_dialogue_topTitle" >Log in to freezr</div>'
-      cont+= '<div><span class="appLogin_name">Freezr server address: </span> <div contenteditable class="appLogin_input" id="freezr_server_name_input" >'+(freezr_server_address? freezr_server_address:'http://')+'</div></div>'
-      cont+= '<div><span class="appLogin_name"></span><span class="freezer_butt" id="freezr_server_pingprelogin_butt">next</span></div>'
-    cont+= '</div>'
-    cont+= '<div id="freezr_server_login_name_area" style="display:none">'
-     cont+= '<div id="freezr_login_username_area"><span class="appLogin_name" style="padding-right:69px;">User Name: </span> <div contenteditable class="appLogin_input" id="freezr_login_username" >'+(freezr_user_id? freezr_user_id:'')+'</div></div>'
-      cont+= '<div><span class="appLogin_name"style="padding-right:79px;">Password: </span><input contenteditable class="appLogin_input" id="freezr_login_pw" type="password"></input></div>'
-      cont+= '<div><span class="appLogin_name"></span><span class="freezer_butt" id="freezr_server_login_butt">log in to freezr</span></div>'
-    cont+= '</div>'
-    cont+= '</div>'
-    divToInsertIn.innerHTML = cont;
-    document.getElementById('freezr_server_login_butt').onclick = function(){
-      freezr_user_id = document.getElementById('freezr_login_username').innerText;
-      var password = document.getElementById('freezr_login_pw').value;
-        console.log("logging in "+freezr_user_id+"-"+password+". server "+freezr_server_address)
-      if (freezr_user_id && freezr_user_id.length>0 && password && password.length>0 && freezr_server_address && freezr_server_address.length > 0 ) {
-
-        var theInfo = { "user_id": freezr_user_id, "password": password, 'app_name':freezr_app_name};
-        if (!freezr_app_name) {
-            alert("developer error: variable freezr_app_name needs to be defined");
-        } else {
-          freezer_restricted.menu.resetDialogueBox();
-          freezer_restricted.connect.ask("/ceps/app_token", theInfo, function(resp) {
-            resp = freezr.utils.parse(resp);
-            console.log("got login "+JSON.stringify(resp));
-            if (resp.error) {
-              document.getElementById('freezer_dialogueInnerText').innerHTML= "Error logging you in: "+(resp.message? resp.message: resp.error);
-              freezr.app.loginCallback? freezr.app.loginCallback(resp): console.warn("Error " + JSON.stringify(resp));
-            } else if (!resp.app_token) {
-              document.getElementById('freezer_dialogueInnerText').innerHTML= "Error logging you in.";
-              freezr.app.loginCallback? freezr.app.loginCallback(resp): console.warn("Error " + JSON.stringify(resp));
-            } else if (resp.app_name == freezr_app_name) {
-              freezer_restricted.menu.close()
-              freezr_app_token = resp.app_token;
-              freezr_server_version = resp.freezr_server_version;
-              freezr.app.offlineCredentialsExpired = false;
-              freezr.app.loginCallback? freezr.app.loginCallback(resp): console.warn("Warning: Set freezr.app.loginCallback to handle log in response: " + JSON.stringify(resp));
-            } else {
-                document.getElementById('freezer_dialogueInnerText').innerHTML= 'developper error  2- loggedin_app_name '+resp.login_for_app_name+' is not correct.';
-            }
-          });
-        }
-      }
-    }
-
-
-    document.getElementById('freezr_server_name_input').onkeypress= function (evt) {
-      if (evt.keyCode == 13) {evt.preventDefault(); document.getElementById("freezr_server_pingprelogin_butt").click();};
-    }
-    document.getElementById('freezr_server_pingprelogin_butt').onclick= function (evt) {
-      freezr_server_address = document.getElementById('freezr_server_name_input').innerText;
-      if (freezr_server_address.slice(freezr_server_address.length-1)=="/")  freezr_server_address = freezr_server_address.slice(0,freezr_server_address.length-1);
-      document.getElementById("freezr_server_server_name_area").innerHTML='<br/><div align="center">.<img src="'+(freezr.app.isWebBased? "/app_files/info.freezr.public/static/ajaxloaderBig.gif": "./freezrPublic/static/ajaxloaderBig.gif")+'"/></div>';
-      freezr.utils.ping(null, function(resp) {
-        resp = freezr.utils.parse(resp);
-        if(resp.error) {
-          document.getElementById("freezr_server_server_name_area").innerHTML="The freezr is not available. Please try later.";
-        } else {
-          document.getElementById("freezr_server_server_name_area").innerHTML="Enter your user name and password to log into "+freezr_server_address;
-          document.getElementById("freezr_server_login_name_area").style.display="block";
-          if (resp.logged_in) {
-            document.getElementById("freezr_login_username").innerText = resp.user_id
-            document.getElementById("freezr_login_pw").focus();
-          } else {
-            document.getElementById("freezr_login_username").focus();
-          }
-        }
-      }, freezr_app_name)
-    }
-    document.getElementById('freezr_login_username').onkeypress= function (evt) {
-      if (evt.keyCode == 13) {evt.preventDefault(); document.getElementById("freezr_login_pw").focus();};
-    }
-    document.getElementById('freezr_login_pw').onkeypress= function (evt) {
-      if (evt.keyCode == 13) {evt.preventDefault(); document.getElementById("freezr_server_login_butt").click();};
-    }
-  }
-
-  freezer_restricted.menu.show_permissions = function(returnPermissions) {
-    if (document.getElementById("freezer_dialogue_viewDataButt")) document.getElementById("freezer_dialogue_viewDataButt").style.left=(parseInt(window.innerWidth/2)-30)+"px";
-    returnPermissions = freezer_restricted.utils.parse(returnPermissions);
-
-    var innerElText = document.getElementById('freezer_dialogueInnerText');
-
-    //onsole.log("ALL permissions are ",returnPermissions);
-
-    document.getElementById('freezer_dialogueOuter').style.display="block";
-    freezer_restricted.menu.addLoginInfoToDialogue('freezer_dialogueInnerText');
-
-    if (!returnPermissions || returnPermissions.error) {
-      innerElText.innerHTML += "<br/><br/>Error connecting to freezr to get permissions";
-    } else {
-
-      innerElText.innerHTML += '<div class="freezer_dialogue_topTitle">App Permissions to Access Data</div>';
-      var num=0, titleDiv;
-
-      var groupedPermissions = {
-              field_delegates:[],
-              folder_delegates:[],
-              object_delegates:[],
-              outside_scripts:[],
-              thisApptoThisAppAsked: [],
-              thisApptoThisAppGranted: [],
-              thisApptoThisAppDenied: [],
-              thisApptoThisAppOutDated: [],
-              thisAppToOtherApps: [],
-              otherAppsGranted: [],
-              otherAppsDenied: [],
-              otherAppsAsked: []
-      };
-
-      for (var i=0; i<returnPermissions.length; i++) {
-        aPerm = returnPermissions[i];
-        if (aPerm.type == "folder_delegate") {
-          groupedPermissions.folder_delegates.push(aPerm);
-        } else if (aPerm.type == "field_delegate") {
-          groupedPermissions.field_delegates.push(aPerm);
-        } else if (aPerm.type == "outside_scripts") {
-          groupedPermissions.outside_scripts.push(aPerm);
-        } else if (aPerm.type == "object_delegate") {
-          groupedPermissions.object_delegates.push(aPerm);
-        } else if (aPerm.type == "db_query" && aPerm.requestor_app == freezr_app_name) {
-          if (aPerm.requestee_app != freezr_app_name) {
-            groupedPermissions.thisAppToOtherApps.push(aPerm);
-          } else if (aPerm.granted && !aPerm.outDated) {
-            groupedPermissions.thisApptoThisAppGranted.push(aPerm);
-          } else if (aPerm.denied) {
-            groupedPermissions.thisApptoThisAppDenied.push(aPerm);
-          } else if (aPerm.outDated) {
-            groupedPermissions.thisApptoThisAppOutDated.push(aPerm);
-          } else {
-            groupedPermissions.thisApptoThisAppAsked.push(aPerm);
-          }
-        } else if (aPerm.type == "db_query" && aPerm.requestee_app == freezr_app_name) {
-          if (aPerm.granted && !aPerm.outDated) {
-            groupedPermissions.otherAppsGranted.push(aPerm);
-          } else if (aPerm.denied) {
-            groupedPermissions.otherAppsDenied.push(aPerm);
-          } else {
-            groupedPermissions.otherAppsAsked.push(aPerm);
-          }
-
-
-        } else {
-          console.warn("ERROR - why this . uknown permission "+JSON.stringify(aPerm));
-        }
-      }
-
-      var makePermissionElementFrom = function(type, permission_object, num, buttText) {
-        var permEl = document.createElement('div');
-        permEl.className = "freezer_BoxTitle"
-        permEl.innerHTML = (permission_object.description?  (permission_object.description+ " ("+permission_object.permission_name+")"): permission_object.permission_name);
-        var acceptButt = document.createElement('div');
-        acceptButt.className = buttText? "freezer_butt": "freezer_butt_pressed";
-        acceptButt.id = "freezer_butt_"+num;
-
-        var other_app = permission_object.requestee_app != permission_object.requestor_app;
-        var access_word = other_app? "access and share":"share";
-
-        acceptButt.innerHTML= buttText;
-        if (buttText) {
-          acceptButt.onclick = function (evt) {freezer_restricted.permissions.change(this.id, permission_object.permission_name, permission_object);};
-        }
-        var detailText = document.createElement('div');
-        detailText.className="freezer_butt_Text"
-
-        detailText.innerHTML  = other_app? ("The app, <b style='color:purple;'>"+permission_object.requestor_app+"</b>,") : "This app"
-        detailText.innerHTML += (buttText=="Accept"? " wants to be able to " : " is able to ")
-        if (type == "db_query") {
-          detailText.innerHTML += access_word + ": "+(permission_object.return_fields? (permission_object.return_fields.join(", ")) : "data")+" from the collection : "+(permission_object.collection? permission_object.collection:"ERROR") + " with the following groups: "+(permission_object.sharable_groups? permission_object.sharable_groups.join(" "): "None")+".<br/>";
-        } else if (type == "folder_delegate") {
-          detailText.innerHTML +=  access_word + " all files in these folders : "+ (permission_object.sharable_folders? permission_object.sharable_folders.join(", "):"folders" ) +" with "+(permission_object.sharable_groups? permission_object.sharable_groups.join(" "): "None")+".<br/>";
-        } else if (type == "field_delegate") {
-          detailText.innerHTML += access_word+ " all data records from the collection : "+(permission_object.collection? permission_object.collection:"ERROR")+" according to these fields:"+ (permission_object.sharable_fields? permission_object.sharable_fields.join(", "):"ERROR" ) +" with "+(permission_object.sharable_groups? permission_object.sharable_groups.join(" "): "None")+".<br/>";
-        } else if (type == "object_delegate") {
-          detailText.innerHTML += access_word+ " individual data records with the following groups:  "+(permission_object.sharable_groups? permission_object.sharable_groups.join(" "): "None")+".<br/>";
-        } else if (type == "outside_scripts") {
-          detailText.innerHTML = (buttText=="Accept"? "This app wants to ":"This app can ")+" access the following scripts from the web: "+permission_object.script_url+"<br/>This script can take ALL YOUR DATA and evaporate it into the cloud.";
-        }
-        var boxOuter = document.createElement('div');
-        boxOuter.appendChild(acceptButt);
-        boxOuter.appendChild(detailText);
-        permEl.appendChild(boxOuter);
-        return permEl;
-      }
-
-
-      function writePermissions(type, recordList, buttText, titleText, altText) {
-          titleDiv = document.createElement('div');
-          titleDiv.className = "freezer_dialogueTitle freezr_dialogueBordered";
-          titleDiv.id = "freezer_dialogueTitle"+(num++);
-          if (recordList && recordList.length >0) {
-            titleDiv.innerHTML = titleText;
-            innerElText.appendChild(titleDiv);
-            for (var i=0; i<recordList.length; i++) {
-              if (type == "field_delegate" || type == "folder_delegate" || type == "object_delegate"|| type == "outside_scripts") {buttText = recordList[i].granted?"Deny":"Accept";}
-              innerElText.appendChild(makePermissionElementFrom(type, recordList[i], num++, buttText));
-            }
-          } else if (altText) {
-            titleDiv.innerHTML = altText+"<br/><br/>";
-            innerElText.appendChild(titleDiv);
-          }
-      }
-
-      if (groupedPermissions.thisAppToOtherApps.length + groupedPermissions.outside_scripts.length + groupedPermissions.thisApptoThisAppGranted.length + groupedPermissions.thisApptoThisAppAsked.length +groupedPermissions.thisApptoThisAppDenied.length + groupedPermissions.thisApptoThisAppOutDated.length+ groupedPermissions.folder_delegates.length+ groupedPermissions.object_delegates.length + groupedPermissions.field_delegates.length == 0) {
-        writePermissions(null, [], "", null, 'This app is not asking for any sharing permissions.');
-      }
-      writePermissions("object_delegate", groupedPermissions.object_delegates, null, 'This app is asking for permission to be able to automatically share individual records or FILES with others.');
-      writePermissions("folder_delegate", groupedPermissions.folder_delegates, "Accept", 'This app is asking for permission to be able to automatically share your files with others.');
-      writePermissions("field_delegate",groupedPermissions.field_delegates, "Accept", 'This app is asking for permission to be able to automatically share some of your date with others.');
-
-      writePermissions("outside_scripts",groupedPermissions.outside_scripts, "Accept", 'This app is asking for permission to be able to access programming scripts from the web. This can be VERY DANGEROUS. DO NOT ACCEPT THIS unless you totally trust the app provider and the source of the script. <br/> <b> PROCEED WITH CAUTION.</b> ');
-
-      writePermissions("db_query", groupedPermissions.thisApptoThisAppAsked, "Accept", 'This app is asking for permission to share your data with other users of this app:');
-      writePermissions("db_query",groupedPermissions.thisApptoThisAppOutDated, "Accept", 'You had previously granted similar permissions but the app has changed the criteria so you have to re-accept them:');
-      writePermissions("db_query",groupedPermissions.thisApptoThisAppGranted, "Deny", 'You have already granted permission for this app to share the following data with other users of this app:');
-      writePermissions("db_query",groupedPermissions.thisApptoThisAppDenied, "Accept", 'You have denied this app from sharing the following data with other users of this app:');
-
-      writePermissions("db_query", groupedPermissions.thisAppToOtherApps, null, "This app is asking for permissions to get your data stored in other apps. You have to go to those apps' pages to grant these permissions:");
-
-      writePermissions("db_query", groupedPermissions.otherAppsAsked, "Accept", 'Other apps are asking for permission for you to see your data from this app:');
-      writePermissions("db_query", groupedPermissions.otherAppsGranted, "Deny", 'You have already granted permission to other apps to see your data fro this app as follows:');
-      writePermissions("db_query", groupedPermissions.otherAppsDenied, "Accept", 'You have denied other apps from seeing your data from this app as follows:');
-
-    }
-  }
-
+  // event listeners
   document.onkeydown= function (evt) {
       if (evt.keyCode == 27 && document.getElementById("freezer_dialogueOuter") && document.getElementById("freezer_dialogueOuter").style.display == "block") {freezer_restricted.menu.close()};
   }
+  document.addEventListener('click', function (evt) {
+    if (evt.target.id && freezr.utils.startsWith(evt.target.id,"freezerperm_") &&  !freezr.utils.startsWith(window.location.pathname,"/account/perms/")) {
+      freezer_restricted.menu.close()
+      var parts = evt.target.id.split('_');
+      let name = parts.slice(4).join("_")
+      function getTopLeft(w,h ) { //stackoverflow.com/questions/43913396/how-can-i-get-a-popup-to-be-a-relative-size
+        let dualScreenLeft = window.screenLeft != undefined ? window.screenLeft : window.screenX;
+        let dualScreenTop = window.screenTop != undefined ? window.screenTop : window.screenY;
+        let width = window.innerWidth ? window.innerWidth : document.documentElement.clientWidth ? document.documentElement.clientWidth : screen.width;
+        let height = window.innerHeight ? window.innerHeight : document.documentElement.clientHeight ? document.documentElement.clientHeight : screen.height;
+        let systemZoom = width / window.screen.availWidth;
+        return [((height - h) / 2 / systemZoom + dualScreenTop), ((width - w) / 2 / systemZoom + dualScreenLeft)]
+      }
+      let [top, left] = getTopLeft(600,350)
+      window.open("/account/perms/"+parts[1]+"?window=popup&requestor_app="+parts[2]+"&permission_name="+name+"&action="+parts[3],"window","width=600, height=350, toolbar=0, menubar=0, left ="+left+", top="+top)
+    }
+  });
 
 freezr.utils.addFreezerDialogueElements = freezer_restricted.menu.addFreezerDialogueElements;
 freezr.utils.freezrMenuOpen = freezer_restricted.menu.freezrMenuOpen;

@@ -1,13 +1,14 @@
 <!--
 options:
             'pages':{
-                'allmydata_view': {
-                    "page_title":"View all my data for "+req.params.app_name,
-                    "html_file":"info.freezr.public/allmydata_view.html",
-                    "css_files": ["info.freezr.public/allmydata_view.css"],
-                    "script_files": ["info.freezr.public/allmydata_view.js","info.freezr.public/FileSaver.js"]
-                }
+            'appdata_backup': {
+                page_title:"Backup and Restore data",
+                page_url:"account_appdata_backup.html",
+                css_files: ["account_appdata_backup.css"],
+                script_files: ["account_appdata_backup.js","FileSaver.js"]
+            }
 -->
+
 <div id="toptitle">
   <span id="freezrHome" >Freezr Home</span>
   <span id="backToApp" >Back to App</span>
@@ -24,7 +25,7 @@ options:
   <div class="marginLeft" >Choose one of the collections to back up. Multiple files of around 2MB will be created with your data. Each file will have a JSON object. The key "collections" has a list. Each item in the list corresponds to one collection, an object with keys "name", the collection name and "data", a list of all objects. </div>
 
   <div id="collection_area">Collection:
-      <select id="collection_names"> 
+      <select id="collection_names">
       </select>
   </div>
 
@@ -46,6 +47,3 @@ options:
   <div id="upload_butts"><span class="freezer_butt" id="skipRecord">SKIP RECORD</span><span class="freezer_butt" id="addRecord">ADD RECORD</span><span id="addAllRecords" class="freezer_butt">ADD ALL RECORDS IN FILE</span><span id="addAllFiles" class="freezer_butt">ADD ALL FILES</span></div>
   <div id="current_record"></div>
 </div>
-
-
-

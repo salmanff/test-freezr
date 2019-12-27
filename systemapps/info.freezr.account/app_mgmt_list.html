@@ -40,16 +40,25 @@
             </td>
 
             <td class="app_inner" id="button_goto_2_{{app_name}}">
-              {{display_name}}
+              <b>{{display_name}}</b>
               <br/>
               <span class="small_text" id="button_goto_3_{{app_name}}">{{app_name}}</span>
               <br/>
-              <span class="small_text blue" id="button_genAppPassword_{{app_name}}">Generate Password for an off-server app</span>
+              <span class="blue" id="button_genAppPassword_{{app_name}}">Generate one-time password</span>
             </td>
 
             <td >
-                <span id="button_removeApp_{{app_name}}" class="right button">
-                  remove app
+              <span id="button_removeApp_{{app_name}}" class="right button red">
+                remove app
+              </span>
+              <span id="empty_{{app_name}}" class="right emptybutt">
+
+              </span>
+              <span id="button_gotoAppPerms_{{app_name}}" class="right button">
+                App Permi- ssions
+              </span>
+                <span id="button_gotoAppData_{{app_name}}" class="right button">
+                  See App Data
                 </span>
                 <span class="right button dev_option" id="button_updateApp_{{app_name}}" style="display:none">
                   refresh from files

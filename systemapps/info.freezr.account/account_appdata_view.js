@@ -1,16 +1,16 @@
-var hello="hello there";
+
 var retrieve_COUNT = 50;
 var dl = {  'meta': { 'user':null,
 					'app_name':null,
 					'date':new Date().getTime(),
-					'source':"allmydata_view",
+					'source':"appdata_view",
 					'all_collection_names': [],
 					'num_collections_retrieved':0,
 					'retrieved_all':false,
 					'app_config': null
 					},
 		  	'current_collection':{
-			  	'num':0,		  	
+			  	'num':0,
 			  	'rowsShown':0,
 			  	'name':null,
 				'fields':[
@@ -22,18 +22,19 @@ var dl = {  'meta': { 'user':null,
 	}
 
 freezr.initPageScripts = function() {
-	document.getElementById('app_name').innerHTML= freezr_app_name;
+	console.log("appname is "+app_name)
+	document.getElementById('app_name').innerHTML= app_name;
 	document.getElementById('freezr_user_id').innerHTML= freezr_user_id;
-	document.getElementById("toptitle").onclick = function() {window.open("/apps/"+freezr_app_name,"_self");}
-	document.getElementById("gotoBackUp").onclick = function() {window.open("/allmydata/backup/"+freezr_app_name,"_self");}
+	document.getElementById("toptitle").onclick = function() {window.open("/apps/"+app_name,"_self");}
+	document.getElementById("gotoBackUp").onclick = function() { window.open("/account/appdata/"+app_name+"/backup","_self");}
 	document.getElementById("saveData").onclick = function () {saveData();}
 	document.getElementById("retrieve_more").onclick = function() {retrieve_more();}
 	document.getElementById("collection_names").onchange = function() {change_collection();}
 
-	dl.meta.app_name=freezr_app_name;
+	dl.meta.app_name=app_name;
 	dl.meta.user=freezr_user_id;
 
-	freezr.utils.getConfig(function(configReturn) {
+	freezr.utils.getConfig(app_name, function(configReturn) {
 		if (configReturn.error ) {
 			showWarning("Error connecting to server");
 		} else {
@@ -66,7 +67,7 @@ var getCollectionData = function () {
 	//onsole.log("to get next coll "+dl.meta.num_collections_retrieved+"-"+dl.meta.all_collection_names.length+" "+JSON.stringify(dl.meta));
 	if (dl.meta.num_collections_retrieved < dl.meta.all_collection_names.length) {
 		freezr.db.query(
-			{ collection:dl.meta.all_collection_names[dl.meta.num_collections_retrieved], count:retrieve_COUNT , skip:0 },
+			{app_name:app_name, collection:dl.meta.all_collection_names[dl.meta.num_collections_retrieved], count:retrieve_COUNT , skip:0 },
 			  gotCollectionData)
 	} else {
 		showCollectionData();
@@ -75,7 +76,7 @@ var getCollectionData = function () {
 var gotCollectionData = function (returnJson) {
 	//onsole.log("gotCollectionData "+JSON.stringify(returnJson));
 	returnJson = freezr.utils.parse(returnJson);
-	var retrieved_all = (returnJson.results.length<retrieve_COUNT);
+	var retrieved_all = (returnJson.results && returnJson.results.length<retrieve_COUNT);
 	dl.collections.push( {'name':dl.meta.all_collection_names[dl.meta.num_collections_retrieved], 'data':returnJson.results, 'retrieved_all':retrieved_all });
 	dl.meta.num_collections_retrieved++;
 	getCollectionData();
@@ -94,20 +95,22 @@ var showCollectionData = function(collection_num) {
 
 
 	var dataSet = dl.collections[collection_num].data;
-	dataSet.forEach(function(dataRow) {
-		for (var key in dataRow ) {
-			if (dataRow.hasOwnProperty(key) && key!="_creator") {
-				if (!dl.current_collection.fields[key]) {
-					dl.current_collection.fields[key]= {'cellLen':10};
-					if (dl.meta.app_config && dl.meta.app_config.collections && dl.meta.app_config.collections[dl.collections[collection_num].name] && dl.meta.app_config.collections[dl.collections[collection_num].name].field_names && dl.meta.app_config.collections[dl.collections[collection_num].name].field_names[key] && dl.meta.app_config.collections[dl.collections[collection_num].name].field_names && dl.meta.app_config.collections[dl.collections[collection_num].name].field_names[key].type  ) {
-						dl.current_collection.fields[key].type = dl.meta.app_config.collections[dl.collections[collection_num].name].field_names[key].type+"";
+	if (dataSet && dataSet.length>0){
+		dataSet.forEach(function(dataRow) {
+			for (var key in dataRow ) {
+				if (dataRow.hasOwnProperty(key) && key!="_creator") {
+					if (!dl.current_collection.fields[key]) {
+						dl.current_collection.fields[key]= {'cellLen':10};
+						if (dl.meta.app_config && dl.meta.app_config.collections && dl.meta.app_config.collections[dl.collections[collection_num].name] && dl.meta.app_config.collections[dl.collections[collection_num].name].field_names && dl.meta.app_config.collections[dl.collections[collection_num].name].field_names[key] && dl.meta.app_config.collections[dl.collections[collection_num].name].field_names && dl.meta.app_config.collections[dl.collections[collection_num].name].field_names[key].type  ) {
+							dl.current_collection.fields[key].type = dl.meta.app_config.collections[dl.collections[collection_num].name].field_names[key].type+"";
+						}
 					}
+					var maxLen =  dl.current_collection.fields[key].type=="date"? 70 : ( dataRow [key]?  (((dataRow [key].length)>100)? 300: ((dataRow [key].length)>40? 200: ( (dataRow [key].length)>10? 100: 50  )   )  ) : 50 );
+					dl.current_collection.fields[key].cellLen = Math.max(dl.current_collection.fields[key].cellLen, maxLen);
 				}
-				var maxLen =  dl.current_collection.fields[key].type=="date"? 70 : ( dataRow [key]?  (((dataRow [key].length)>100)? 300: ((dataRow [key].length)>40? 200: ( (dataRow [key].length)>10? 100: 50  )   )  ) : 50 );
-				dl.current_collection.fields[key].cellLen = Math.max(dl.current_collection.fields[key].cellLen, maxLen);
 			}
-		}
-	});
+		});
+	}
 
 
 	var tempText = '<div class="div-table-row headrow">';
@@ -119,9 +122,9 @@ var showCollectionData = function(collection_num) {
 			if (key=="_date_Created") newKey ="Created";
 			if (key=="_date_Modified") newKey ="Modified";
 			tempText+= "<div class='div-table-col headcell' style='width:"+  dl.current_collection.fields[key].cellLen +"px'>"+newKey+"</div>";
-			totalWidth+=dl.current_collection.fields[key].cellLen+10; 
+			totalWidth+=dl.current_collection.fields[key].cellLen+10;
 		}
-	} 
+	}
 	tempText+="</div>"
 
 	document.getElementById("collection_sheet").style.width = totalWidth+"px";
@@ -133,13 +136,13 @@ var showCollectionData = function(collection_num) {
 
 var insertnextElements = function() {
 	//onsole.log("insert next"+dl.collections[dl.current_collection.num].data.length);
-	if (dl.current_collection.rowsShown<dl.collections[dl.current_collection.num].data.length) {
+	if (dl.collections[dl.current_collection.num].data && dl.current_collection.rowsShown<dl.collections[dl.current_collection.num].data.length) {
 		var tempText = "";
 		var dataRow = dl.collections[dl.current_collection.num].data[dl.current_collection.rowsShown];
 		for (var key in dl.current_collection.fields ) {
 			if (dl.current_collection.fields.hasOwnProperty(key)) {
 				var cellContent = dataRow[key]?  (dl.current_collection.fields[key].type=="date"?freezr.utils.longDateFormat(  dataRow[key]) : JSON.stringify(dataRow[key])) : " - ";
-				 
+
 				tempText+= "<div class='div-table-col' style='width:"+ dl.current_collection.fields[key].cellLen+"px' >"+(cellContent)+"</div>"
 			}
 		}
@@ -160,7 +163,7 @@ var change_collection = function() {
 	showCollectionData(document.getElementById("collection_names").value);
 }
 var retrieve_more = function() {
-	freezr.db.query({ collection:dl.current_collection.name, count:retrieve_COUNT , skip:(dl.collections[dl.current_collection.num].data.length) }, gotMoreData)	
+	freezr.db.query({ collection:dl.current_collection.name, count:retrieve_COUNT , skip:(dl.collections[dl.current_collection.num].data.length) }, gotMoreData)
 }
 var gotMoreData = function(returnJson) {
 	returnJson = freezr.utils.parse(returnJson);
@@ -176,11 +179,11 @@ var saveData = function() {
 	if (confirm("Download All Data to this device?")){
 		// codepen.io/davidelrizzo/pen/cxsGb
 		var text = JSON.stringify(dl);
- 		var filename = "freezr data download "+freezr_app_name+" for "+freezr_user_id+" "+(new Date().getTime())+".json";
+ 		var filename = "freezr data download "+app_name+" for "+freezr_user_id+" "+(new Date().getTime())+".json";
 		var blob = new Blob([text], {type: "text/plain;charset=utf-8"});
   		saveAs(blob, filename);
 	};
-} 
+}
 
 
 // Generics
@@ -193,5 +196,5 @@ var showWarning = function(msg) {
 		if (newText && newText!=" ") newText+="<br/>";
 		newText += msg;
 		document.getElementById("warnings").innerHTML= newText;
-	} 
+	}
 }

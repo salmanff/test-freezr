@@ -88,7 +88,7 @@ exports.db_find = function(env_params, appcollowner, query, options, cb) {
   //onsole.log("in nedb db_find ",query, "options",options)
   const coll = get_coll(env_params, appcollowner)
   coll.find(query)
-      //.sort(options.sort || null)
+      .sort(options.sort || null)
       .limit(options.count || ARBITRARY_FIND_COUNT_DEFAULT)
       .skip(options.skip || 0)
       .exec(cb);
@@ -143,6 +143,7 @@ exports.set_and_nulify_environment = function(old_env) {
 }
 
 exports.getAllCollectionNames = function(env_params, app_name, callback) {
+  //onsole.log("getting coll names for ",app_name)
   const db_folder = env_params.dbParams.db_path + path.sep;
   const fs = require('fs');
   let list = []

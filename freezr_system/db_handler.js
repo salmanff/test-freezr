@@ -444,8 +444,10 @@ exports.get_or_set_app_token_for_logged_in_user = function (env_params, device_c
     }
   })
 }
-exports.set_app_token_record_with_onetime_password = function (env_params, device_code, user_id, app_name, expiry, callback){
-  if (!expiry) expiry = new Date ().getTime() + EXPIRY_DEFAULT
+exports.set_app_token_record_with_onetime_password = function (env_params, device_code, user_id, app_name, params, callback){
+  if (!params) params={}
+  if (!params.expiry) params.expiry = new Date ().getTime() + EXPIRY_DEFAULT
+  params.one_device = (params.one_device===false)? false:true;
   let write = {
     'logged_in':false,
     'source_device':device_code,
@@ -453,11 +455,11 @@ exports.set_app_token_record_with_onetime_password = function (env_params, devic
     'app_name':app_name,
     'app_password': generate_app_password(user_id, app_name, device_code),
     'app_token': generate_app_token(user_id, app_name, device_code), // create token instead
-    'expiry':expiry,
+    'expiry':params.expiry,
+    'one_device':params.one_device,
     'user_device': null,
     'date_used':null // to be replaced by date
   }
-  //onsole.log("in db:handler set_or_update_user_device_code")
   exports.db_insert (env_params, APP_TOKEN_APC, null,
     write, null,
     (err, results) => {
@@ -468,7 +470,35 @@ exports.set_app_token_record_with_onetime_password = function (env_params, devic
         }
     })
 }
-exports.get_app_token_record_using_pw_and_mark_used = function(env_params, device_code, user_id,  app_name, password, callback) {
+exports.get_app_token_onetime_pw_and_update_params = function(env_params, device_code, user_id,  app_name, password, params, callback) {
+  exports.db_find(env_params, APP_TOKEN_APC, {app_password:password}, null,
+    (err, results) => {
+    if (err) {
+      callback(err);
+    } else if (!results || results.length==0){
+      callback(helpers.error("no_results", "expected record but found none (get_app_token_onetime_pw_and_update_params)"))
+    } else {
+      let record = results[0]; // todo - theoretically there could be multiple and the right one need to be found
+      if (record.user_id !=user_id || record.app_name != app_name) {
+        console.warn(app_name, user_id, record)
+        callback(helpers.error("mismatch", "app_name or user_id no not match expected value (get_app_token_record_using_pw)"))
+      } else if (helpers.expiry_date_passed(record.expiry)){
+        callback(helpers.error("password_expired","One time password has expired."))
+      } else if (record.date_used){
+        callback(helpers.error("password_used","Cannot change parameters after password has been used"))
+      } else {
+        changes = {}
+        if (params.expiry) changes.expiry = params.expiry
+        if (params.one_device || params.one_device===false) changes.one_device =  params.one_device;
+        exports.db_update (env_params, APP_TOKEN_APC, record._id, changes, null,function(err, results) {
+            if (err) {callback(err)} else {callback(null, record.app_token)}
+          })
+      }
+    }
+  })
+}
+exports.get_app_token_record_using_pw_and_mark_used = function(env_params, session_device_code, user_id,  app_name, password, callback) {
+  //onsole.log("get_app_token_record_using_pw",session_device_code, user_id,  app_name, password, callback)
   exports.db_find(env_params, APP_TOKEN_APC, {app_password:password}, null,
     (err, results) => {
     //onsole.log("get_app_token_record_using_pw",results)
@@ -479,23 +509,16 @@ exports.get_app_token_record_using_pw_and_mark_used = function(env_params, devic
     } else {
       let record = results[0]; // todo - theoretically there could be multiple and the right one need to be found
       if (record.user_id !=user_id || record.app_name != app_name) {
-        console.warn(app_name, user_id, record)
         callback(helpers.error("mismatch", "app_name or user_id no not match expected value (get_app_token_record_using_pw)"))
+      } else if (record.date_used){
+        callback(helpers.error("password_used","One time password already in use."))
+      } else if (helpers.expiry_date_passed(record.expiry)){
+        callback(helpers.error("password_expired","One time password has expired."))
       } else {
-        db_handler.get_app_token_record_using_pw(env_params, user_id,  app_name, password, function(err, record) {
-          //onsole.log("results in db_handler get_app_token_record_using_pw",record)
-          if (record.date_used){
-            callback(helpers.error("password_used","One time password already in use."))
-          } else if (helpers.expiry_date_passed(record.expiry)){
-            callback(helpers.error("password_expired","One time password has expired."))
-          } else {
-            record.user_device = device_code
-            exports.db_update (env_params, APP_TOKEN_APC, record._id,
-              {date_used:(new Date().getTime()), user_device:record.user_device}, null,function(err, results) {
-                if (err) {callbak(err)} else {callback(null, record.app_token)}
-              })
-          }
-        })
+        exports.db_update (env_params, APP_TOKEN_APC, record._id,
+          {date_used:(new Date().getTime()), user_device:session_device_code}, null,function(err, results) {
+            if (err) {callback(err)} else {callback(null, record.app_token)}
+          })
       }
     }
   })
@@ -518,16 +541,17 @@ exports.reset_token_cache = function(app_token){
 exports.check_app_token_and_params = function(req, checks, callback) {
   let app_token = (req.header('Authorization') && req.header('Authorization').length>10)? req.header('Authorization').slice(7):null;
   if (!app_token) app_token = req.params.internal_query_token
-  //onsole.log("check_app_token_record for "+app_token+" and app: "+checks.requestor_app)
+  checks = checks || {}
+  //onsole.log("check_app_token_and_params for "+app_token+" and app: "+checks.requestor_app)
 
   if (!app_token) {
-    callback(helpers.error("tokem", "expected app_token but found none (check_app_token_record)"))
+    callback(helpers.error("tokem", "expected app_token but found none (check_app_token_and_params)"))
   } else {
     exports.find_token_from_cache_or_db(req.freezr_environment, app_token, (err, results) => {
       if (err) {
         callback(err);
       } else if (!results || results.length==0){
-        callback(helpers.error("no_results", "expected record but found none (check_app_token_record)"))
+        callback(helpers.error("no_results", "expected record but found none (check_app_token_and_params)"))
       } else {
         let record = results[0]; // todo - theoretically there could be multiple and the right one need to be found
         const ARBITRARY_CACHE_MAX = 50;
@@ -535,13 +559,9 @@ exports.check_app_token_and_params = function(req, checks, callback) {
         TOKEN_CACHE[app_token] = record;
         if (typeof checks.requestor_app == "string")  checks.requestor_app=[checks.requestor_app]
         if (!checks.requestor_app) checks.requestor_app=[]
-        //onsole.log("check_app_token_record ", record)
         if (!record) {
-          console.warn("No record found for app token at device ", req.session.device_code)
           callback(helpers.error("mismatch", "record not found (check_app_token_and_params)"))
-        } else if (!record.user_id || !record.app_name ||
-              record.user_device != req.session.device_code) {
-          console.warn(app_name, user_id, req.session.device_code, record)
+        } else if (!record.user_id || !record.app_name ) {
           callback(helpers.error("mismatch", "app_name or user_id or device_code do not match expected value (check_app_token_and_params)"), record)
         } else if (checks.user_id && record.user_id != checks.user_id ){
           callback(helpers.error("mismatch", "user_id does not match expected value (check_app_token_and_params) "), record)
@@ -551,8 +571,8 @@ exports.check_app_token_and_params = function(req, checks, callback) {
           callback(helpers.error("mismatch", "user_id does not match logged in (check_app_token_and_params) "), record)
         } else if (record.logged_in && checks.logged_in === false){
           callback(helpers.error("mismatch", "true token logged_in does not match logged in (check_app_token_and_params) "), record)
-        } else if (!record.logged_in && checks.logged_in === true){
-          callback(helpers.error("mismatch", "false token logged_in does not match logged in (check_app_token_and_params) "), record)
+        } else if (record.one_device && record.user_device != req.session.device_code ){
+          callback(helpers.error("mismatch", "one_devioce checked but device does not match (check_app_token_and_params) "), record)
         } else {
           //onsole.log("checking device codes ..", req.session.device_code, the_user, req.params.requestor_app)
           callback(err, record.user_id, record.app_name, record.logged_in)
@@ -1017,7 +1037,7 @@ exports.all_granted_app_permissions_by_name = function (env_params, requestor_ap
     var dbQuery = {'$and': [{"granted":true}, {$or:[{"outDated":false}, {"outDated":null}] } ,   {'requestee_app':requestee_app}, {'requestor_app':requestor_app}, {'permission_name':permission_name}]};
     //var dbQuery {'$and': [{"granted":true}, {"outDated":false},  {'requestee_app':requestee_app}, {'requestor_app':requestor_app}, {'permission_name':permission_name}]};
     if (type) dbQuery.$and.push({"type":type})
-    //onsole.log("all_granted_app_permissions_by_name"+JSON.stringify(dbQuery));
+    //onsole.log("all_granted_app_permissions_by_name ",dbQuery);
 
     exports.db_find(env_params, PERMISSION_APC, dbQuery, {}, callback)
         // todo - at callback also review each user's permission to make sure it's not outdated

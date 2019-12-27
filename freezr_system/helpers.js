@@ -17,7 +17,7 @@ exports.log = function(req, message) {
     exports.permitted_types = {
         groups_for_objects: ["user","logged_in","public"],
         groups_for_fields: ["user","logged_in"],
-        type_names: ["folder_delegate", "db_query"], // used in getDataObject
+        type_names: ["object_delegate", "db_query"], // used in getDataObject
     }
     var reserved_collection_names = ["field_permissions", "accessible_objects"]; // "files" s also reserved but can write to it
     const RESERVED_IDS =["freezr_admin"]
@@ -149,7 +149,7 @@ exports.log = function(req, message) {
         exports.send_failure(res, err, system_file, version, theFunction, message )
     };
     exports.send_internal_err_page= function (res, system_file, version, theFunction, message ) {
-        // console 2019 - redo this page...
+        // todo 2019 - redo this page...
         var err = exports.internal_error (system_file, version, theFunction, message )
         res.redirect('/account/home?error=true&error_type=internal&file='+system_file+"&msg="+message)
     };
@@ -223,6 +223,7 @@ exports.log = function(req, message) {
         // http://stackoverflow.com/questions/1349404/generate-a-string-of-5-random-characters-in-javascript
         var text = "";
         var possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        if (!textlen) textlen = 10
 
         for( var i=0; i < textlen; i++ )
             text += possible.charAt(Math.floor(Math.random() * possible.length));

@@ -9,9 +9,11 @@ freezr.initPageScripts = function() {
       var args = evt.target.id.split('_');
       args.splice(0,2).join('_');
       //onsole.log(args)
-      if (buttons[parts[1]]) buttons[parts[1]](args);
+      if (buttons[parts[1]]) buttons[parts[1]](args, evt.target);
     }
   });
+
+DEFAULT_EXPIRY_DAYS = 30// days
 
   document.getElementById("appUrl").addEventListener('keyup', function() {
     document.getElementById("appNameFromUrl").innerText = getAppFromUrl(document.getElementById("appUrl").innerText)
@@ -39,7 +41,7 @@ var showDevOptions = function(){
 freezr.onFreezrMenuClose = function(hasChanged) {
   //freezer_restricted.menu.resetDialogueBox(true);
   if (userHasIntiatedAcions) buttons.updateAppList();
-  setTimeout(function() {freezer_restricted.menu.resetDialogueBox(true);},300);
+  //setTimeout(function() {freezer_restricted.menu.resetDialogueBox(true);},300);
 }
 var buttons = {
   'showDevOptions': function(args) {
@@ -98,12 +100,11 @@ var buttons = {
         if (file.size > 500000) document.getElementById("freezer_dialogueInnerText").innerHTML = "<br/>You are uploading a large file. This might take a little while. Please be patient.<br/>"+document.getElementById("freezer_dialogueInnerText").innerHTML
         freezer_restricted.connect.send(url, uploadData, function(returndata) {
             var d = freezr.utils.parse(returndata);
-            console.log("Got retiurn data on uopload file ")
-            console.log(d)
+            console.log("Upload file returned ",d)
             if (d.err) {
               writeErrorsToFreezrDialogue(d)
             } else{
-              ShowAppUploadErrors(d.flags,uploadSuccess);
+              ShowAppUploadErrors(d.flags, 'uploadZipFileApp' ,uploadSuccess);
             }
           }, "PUT", null);
       //}
@@ -129,7 +130,7 @@ var buttons = {
           if (d.err) {
             writeErrorsToFreezrDialogue(d)
           } else{
-            ShowAppUploadErrors(d.flags,uploadSuccess);
+            ShowAppUploadErrors(d.flags, 'addAppViaUrl', uploadSuccess);
           }
       })
     }
@@ -145,10 +146,11 @@ var buttons = {
       freezer_restricted.connect.ask('/v1/account/app_install_blank', {'app_name':app_name }, function(returndata) {
           console.log(returndata)
           var d = freezr.utils.parse(returndata);
+          d.isBlankOfflineApp = true
           if (d.err) {
             writeErrorsToFreezrDialogue(d)
           } else{
-            ShowAppUploadErrors(d.flags,uploadSuccess);
+            ShowAppUploadErrors(d.flags, 'addBlankApp', uploadSuccess);
           }
       })
     }
@@ -167,25 +169,88 @@ var buttons = {
         if (d.err) {
           if (document.getElementById("freezer_dialogueInnerText")) document.getElementById("freezer_dialogueInnerText").innerHTML= "<br/>"+JSON.stringify(d.err);
         } else {
-          ShowAppUploadErrors(d.flags,showDevOptions)
+          ShowAppUploadErrors(d.flags, 'updateApp', showDevOptions)
         }
         buttons.updateAppList();
     })
   },
-  'genAppPassword': function(args){
-    freezr.perms.generateAppPassword(args[0], null, (resp) => {
+  'genAppPassword': function(args, elClicked){
+    let noticeDiv = document.getElementById("perms_dialogue")
+    var rect = elClicked.getBoundingClientRect();
+    noticeDiv.style.left =(rect.left)+"px"
+    noticeDiv.style.width =(window.innerWidth - (2*rect.left)+50)+"px"
+    noticeDiv.style.top =(rect.top+window.scrollY-15)+"px"
+    noticeDiv.style.display="block"
+    document.getElementById("spinner").style.display="block";
+    document.getElementById("perms_text").style.display="none";
+    document.getElementById("numdaysvalid").value=DEFAULT_EXPIRY_DAYS;
+    document.getElementById("one_device").checked=true;
+    document.getElementById("appNameForApp").innerHTML=args[0];
+    document.getElementById("perm_warning").style.display="none"
+    document.getElementById("button_savePermsChanges").style.display="none";
+    elClicked.parentElement.style="padding-bottom:60px"
+
+    const didChange = function(){document.getElementById("button_savePermsChanges").style.display="block";}
+    document.getElementById("numdaysvalid").onchange= didChange;
+    document.getElementById("numdaysvalid").oninput= didChange;
+    document.getElementById("one_device").onchange=didChange;
+
+
+    let app_name = args[0]
+    let expiry = new Date().getTime()
+    expiry += DEFAULT_EXPIRY_DAYS * 24 * 3600 * 1000
+    let one_device = true;
+    let options = {app_name, expiry, one_device}
+
+    let url = '/v1/account/apppassword/generate';
+    console.log("sending genAppPassword options",options)
+
+    freezer_restricted.connect.read(url, options , (resp) => {
       resp=freezr.utils.parse(resp)
       console.log(resp)
-
-
-      var copyText = document.getElementById("cutpastetext");
+      document.getElementById("spinner").style.display="none";
+      var copyText = document.getElementById("appPasswordForApp");
       copyText.innerHTML = resp.app_password
-      copyText.select();
+      //copyText.select();
       //copyText.setSelectionRange(0, 99999); /*For mobile devices*/
       document.execCommand("copy");
-
-      alert("Your password for the offline app of "+args[0]+" is: "+resp.app_password+ " you can copy this and paste it in your off line app")
+      document.getElementById("perms_text").style.display="block"
     })
+  },
+  'closePermsDialogue':function(){
+    document.getElementById('perms_dialogue').style.display="none";
+  },
+  'savePermsChanges':function(){
+    let expiry = new Date().getTime()
+    expiry += parseInt(document.getElementById("numdaysvalid").value) * 24 * 3600 * 1000
+    let one_device = document.getElementById("one_device").checked;
+    let app_name = document.getElementById("appNameForApp").innerText;
+    let password = document.getElementById("appPasswordForApp").innerText;
+    let options = {app_name, expiry, one_device, password}
+    let url = '/v1/account/apppassword/updateparams';
+
+    console.log("sending savePermsChanges options",options)
+    freezer_restricted.connect.read(url, options , (resp) => {
+      resp=freezr.utils.parse(resp)
+      console.log(resp)
+      document.getElementById("button_savePermsChanges").style.display="none";
+      document.getElementById("perm_warning").style.display="block";
+      document.getElementById("perm_warning").innerHTML = (resp.success? "Changes were saved successfully": "There was an error saving your changes. Try again later");
+      setTimeout(function(){document.getElementById("perm_warning").style.display="none";},15000)
+    })
+
+
+      // save changes to perm
+      // make sure cookie toggle works
+      // copytext do
+  },
+  'gotoAppData':function(args) {
+    let url = '/account/appdata/'+ args[0] +'/view'
+    window.open(url,'_self')
+  },
+  'gotoAppPerms':function(args) {
+    let url = '/account/perms/'+ args[0]
+    window.open(url,'_self')
   },
   'addAppInFolder': function() {
     userHasIntiatedAcions = true;
@@ -239,14 +304,17 @@ const normliseGithubUrl = function (aUrl){
   return aUrl
 }
 
-var ShowAppUploadErrors = function (theData,callFwd) {
+var ShowAppUploadErrors = function (theData, type, callFwd) {
   freezr.utils.getHtml("uploaderrors.html", null, function(theHtml) {
     var theEl = document.getElementById("freezer_dialogueInnerText");
     try {
-      console.log("theHtml",theHtml)
-      console.log("theData",theData)
+      //onsole.log("theHtml",theHtml)
+      //onsole.log("theData",theData)
       theEl.innerHTML = Mustache.to_html( theHtml,theData );
-      console.log("done")
+      if (type == "addBlankApp") {
+        document.getElementById("button_closeMenu_1").style.display="block"
+        document.getElementById("finalise_outer").style.display="none"
+      }
     } catch(e) {
       console.warn("mustache failed",e)
       theEl.innerHTML = JSON.stringify(theData);

@@ -1,6 +1,5 @@
-
 body {
-	font-family: "Lucida Sans Unicode", "Helvetica Neue", "Arial", sans-serif; 
+	font-family: "Lucida Sans Unicode", "Helvetica Neue", "Arial", sans-serif;
 	font-size: 10pt;
 	margin: 0;
 	padding: 0;
@@ -13,10 +12,10 @@ body {
 	z-index: 98;
 }
 .freezerMenuButt_Norm{
-	top:3px;	
+	top:3px;
 }
 .freezerMenuButt_Head{
-	top:23px;	
+	top:23px;
 }
 #freezer_dialogueOuter {
 	position: absolute;
@@ -38,7 +37,7 @@ body {
 	background-color: white;
 	opacity: .6;
 }
-#freezer_dialogueInner {	
+#freezer_dialogueInner {
 	padding:5px;
 	padding-top: 45px;
 	min-width:200px;
@@ -102,7 +101,7 @@ body {
 	font-weight: normal;
 	z-index: 99;
 	padding-left: 40px;
-	background-image:url(/app_files/info.freezr.public/static/freezer_log_top.png); 
+	background-image:url(/app_files/info.freezr.public/static/freezer_log_top.png);
 	background-size: 36px 36px;
     background-repeat: no-repeat;
 }
@@ -159,6 +158,7 @@ body {
 .freezer_butt_Text{
 	min-height: 45px;
 	font-weight: normal;
+	margin-top: 5px;
 }
 .freezer_dialogueTitle {
 	font-size: 20px;
@@ -169,19 +169,20 @@ body {
 }
 .freezr_dialogueBordered {
 	margin-top: 10px;
-	border-top: 1px solid grey;	
+	border-top: 1px solid grey;
 }
 .freezer_texture_outer {
 	background-color:  #ABABAB;
-	text-align:center; 
+	text-align:center;
 	margin:0;
 }
 .freezer_texture_inner {
-	text-align:left; 
-	min-height:1000px; 
-	max-width:835px; 
-	padding:20px; 
-	padding-top:0; 
-	margin:0 auto; 
-	background-image:url(/app_files/info.freezr.public/static/freezr_texture.png); 
+	text-align:left;
+	min-height:500px;
+	max-width:835px;
+	padding:20px;
+	padding-top:0;
+	padding-bottom: 200px;
+	margin:0 auto;
+	background-image:url(/app_files/info.freezr.public/static/freezr_texture.png);
 	background-repeat: repeat;}

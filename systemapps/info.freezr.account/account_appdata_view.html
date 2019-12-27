@@ -1,15 +1,15 @@
 <!--
 options:
-            'pages':{
-                'allmydata_view': {
-                    "page_title":"View all my data for "+req.params.app_name,
-                    "html_file":"info.freezr.public/allmydata_view.html",
-                    "css_files": ["info.freezr.public/allmydata_view.css"],
-                    "script_files": ["info.freezr.public/allmydata_view.js","info.freezr.public/FileSaver.js"]
-                }
+          'pages':{
+            'appdata_view': {
+                page_title:"View all my data ",
+                page_url: "account_appdata_view.html",
+                css_files: ["account_appdata_view.css"],
+                script_files: ["account_appdata_view.js","FileSaver.js"]
+            },
 -->
 <div id="toptitle">
-  View All Your Data from App: 
+  View All Your Data from App:
   <span id="app_name"></span>
   <span id="backToApp" >Back to App</span>
 </div>
@@ -22,7 +22,7 @@ options:
 <div id="warnings"></div>
 
 <div id="collection_area">Collection:
-    <select id="collection_names"> 
+    <select id="collection_names">
     </select>
 </div>
 
@@ -33,5 +33,3 @@ options:
 </div>
 
 <div id="retrieve_more">more data</div>
-
-

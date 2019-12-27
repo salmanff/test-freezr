@@ -1,4 +1,4 @@
-/* allmydata_backup.css - 
+/* account_appdata_backup.css - 
  * part of info.freezr.public */
 
 body{
@@ -31,7 +31,7 @@ body{
   cursor: pointer;
   font-weight: normal;
   font-size: 16px;
-  color: #2060ff; 
+  color: #2060ff;
 }
 #collection_area {
   text-align: center;
@@ -67,7 +67,7 @@ body{
 #collection_area {
   padding-left: 15px;
   margin-bottom: 10px;
-} 
+}
 #collection_names {
   width:100px;
   margin-top: -5px;
@@ -78,12 +78,12 @@ body{
   font-weight: bold;
   padding-left: 8px;
   padding-right: 20px;
-} 
+}
 #backup_status {
   margin:10px;
 }
 #recordTable {
-  table-layout: fixed; 
+  table-layout: fixed;
   width: 100%;
 }
 tr {width:100%; vertical-align: top;}
