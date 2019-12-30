@@ -244,10 +244,10 @@ exports.first_registration = function (req, callback) {
         req.freezr_environment.dbParams.pass)
         temp_environment.dbParams.pass = req.freezr_environment.dbParams.pass;
     if (helpers.startsWith(temp_environment.dbParams.connectionString,"mongodb") ) {
-        temp_environment.dbParams.dbtype = "localhost-mongo"
-      } else if (temp_environment.dbParams.host == "localhost" ){
-        temp_environment.dbParams.dbtype = "localhost-mongo"
-      }
+        temp_environment.dbParams.dbtype = "mongo"
+    } else if (temp_environment.dbParams.host == "localhost" ){
+      temp_environment.dbParams.dbtype = "localhost-mongo"
+    }
         // // TODO later  all params need to be checked and fleshed out
     //if (temp_environment.dbParams && temp_environment.dbParams.connectionString)
     if (req.body.externalFs && req.body.externalFs.name && req.body.externalFs.name!="glitch.com") temp_environment.userDirParams = req.body.externalFs ;

@@ -323,7 +323,7 @@ const add_app_uses = function(){
     // userfiles
         app.get('/v1/userfileGetToken/:requestor_app/:permission_name/:requestee_app/:user_id/*', userDataAccessRights, app_handler.getFileToken); // collection_name is files
 
-        app.get('/v1/userfiles/:user_id/:requestee_app/*', app_handler.sendUserFile); // collection_name is files
+        app.get('/v1/userfiles/:user_id/:requestee_app/*', addVersionNumber, app_handler.sendUserFile); // collection_name is files
 
 
     // default redirects

@@ -113,7 +113,7 @@ exports.db_insert = function (env_params, appcollowner, id, entity, options, cal
     })
 }
 exports.db_getbyid = function (env_params, appcollowner, id, callback){
-  id = get_real_object_id(id)
+  //onsole.log("getbyid ",id)
   async.waterfall([
       // 1. open database connection
       function (cb) {
@@ -128,7 +128,7 @@ exports.db_getbyid = function (env_params, appcollowner, id, callback){
 
       // 3. Get item
       function(collection, cb) {
-        collection.find({ _id: id }).toArray(cb);
+        collection.find({ _id: get_real_object_id(id) }).toArray(cb);
       }
   ], function(err, results) {
       let object=null;
@@ -156,9 +156,9 @@ exports.db_update = function (env_params, appcollowner, idOrQuery, updates_to_en
       if(err) {
         callback(exports.state_error ("db_default_mongo", exports.version, "db_update", err ))
       } else {
-          let find = (typeof idOrQuery == "string")? {_id: idOrQuery }: idOrQuery;
+          let find = objectifyId(idOrQuery);
           if ( options.replaceAllFields) {
-            theCollection.find(idOrQuery)
+            theCollection.find(find)
                 .limit(1)
                 .toArray((err, entities) => {
                  if (!entities || entities.length==0) {
@@ -183,7 +183,7 @@ exports.replace_record_by_id = function (env_params, appcollowner, id, updates_t
     if(err) {
       callback(exports.state_error ("db_default_mongo", exports.version, "db_update", err ))
     } else {
-      theCollection.update({_id: id }, {$set: updates_to_entity}, {safe: true, multi:false }, (err, result) =>{
+      theCollection.update({_id: get_real_object_id(id) }, {$set: updates_to_entity}, {safe: true, multi:false }, (err, result) =>{
         if (err){
           cb(err)
         } else if (result && result.result && result.result.n && result.result.n == 1) { // Also nModified=1
@@ -197,7 +197,7 @@ exports.replace_record_by_id = function (env_params, appcollowner, id, updates_t
 }
 exports.db_remove = function(env_params, appcollowner, idOrQuery, options, callback){
   // No options at this point
-  if (typeof idOrQuery=="string") idOrQuery={"_id":idOrQuery}
+  idOrQuery = objectifyId(idOrQuery)
   if (exports[appcollowner.collection_name] ) {
     exports[appcollowner.collection_name].remove(idOrQuery, {safe: true}, callback);
   //} else if (running_apps_db.hasOwnProperty(appcollowner.app_name) && running_apps_db[appcollowner.app_name]) {
@@ -213,8 +213,25 @@ exports.db_remove = function(env_params, appcollowner, idOrQuery, options, callb
     })
   }
 }
+const objectifyId = function (query) {
+  //onsole.log("onjectifying ",query)
+  if (typeof query == "string") {
+    return {'_id': get_real_object_id(query)}
+  } else if (query && typeof query === 'object') {
+    for (let [akey, value] of Object.entries(query) ) {
+      if (akey == "_id" && typeof value=="string") query[akey] = get_real_object_id(value)
+      // todo if $or or $and - iterate
+    }
+    return query
+  } else {
+    return query
+  }
+}
 exports.db_find = function(env_params, appcollowner, query, options, callback) {
-  //onsole.log("in mongo db_find ",query, "options",options)
+  //onsole.log("in mongo db_find ",JSON.stringify (query), "options",options)
+  query = objectifyId(query)
+  //onsole.log("in mongo NEW QUERY ",query, "options",options)
+
   options = options || {}
   if (appcollowner.app_name=="info_freezer_admin" && exports[appcollowner.collection_name]) {
     exports[appcollowner.collection_name].find(query).toArray(callback)
@@ -282,14 +299,14 @@ const dbConnectionString = function(appName) {
 const get_real_object_id = function (data_object_id) {
     var ObjectID = require('mongodb').ObjectID;
     var real_id=data_object_id;;
-/*    try {
+    if (typeof data_object_id=="string") {
+      try {
         real_id = new ObjectID(data_object_id);
     } catch(e) {
-        console.warn("error getting real_id possibly due to a mal-configured app_config file ",data_object_id,e)
+          console.warn("Could not get mongo real_id - using text id for "+data_object_id)
     }
-    todonow - 2019 removed
-    */
-    return real_id
+  }
+  return real_id
 }
 
 

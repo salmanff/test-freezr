@@ -708,8 +708,8 @@ exports.sendUserFile = function (req , res){
   // /v1/userfiles/info.freezr.demo.clickOnCheese4.YourCheese/salman/logo.1.png?fileToken=Kn8DkrfgMUwCaVCMkKZa&permission_name=self
   let parts = req.path.split('/').slice(3)
   let key = parts.join('/')
-  //onsole.log("sendUserFile key is ",key)
   let newpath = "userfiles/"+parts[1]+"/"+parts[0]+"/"+parts[2]
+  //onsole.log("sendUserFile key is ",key, "url:",req.url," new path:",newpath)
   if (!FILE_TOKEN_CACHE[key] || !FILE_TOKEN_CACHE[key][req.query.fileToken] || (new Date().getTime - FILE_TOKEN_CACHE[key][req.query.fileToken] >FILE_TOKEN_EXPIRY)) {
     //if (!FILE_TOKEN_CACHE[key] ) //onsole.warn("NO KEY")
     //if ( !FILE_TOKEN_CACHE[key][req.query.fileToken]  ) //onsole.warn("NO TOKEN ",req.query.fileToken,"cache is ",FILE_TOKEN_CACHE[key])
