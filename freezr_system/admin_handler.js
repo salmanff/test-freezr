@@ -738,7 +738,7 @@ exports.oauth_perm_make = function (req, res) {
                 }
             } else {
                 update = "update" +(is_update?"":"_unplanned")
-                db_handler.db_update (req.freezr_environment, appcollowner, (results._id+""),
+                db_handler.db_update (req.freezr_environment, appcollowner, results._id,
                   params, {replaceAllFields:true}, cb)
             }
         },
