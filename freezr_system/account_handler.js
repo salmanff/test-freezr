@@ -108,7 +108,6 @@ exports.generateAccountPage = function (req, res) {
 // USER MANAGEMENT
 exports.login = function (req, res) {
     // /v1/account/login
-    // "/v1/account/applogin"
     //onsole.log("login req host:"+req.hostname+" url"+req.url+" baseUrl "+req.baseUrl+" BODY "+JSON.stringify(req.body));
     var user_id = (req.body && req.body.user_id)? db_handler.user_id_from_user_input(req.body.user_id): null;
     var source_app_code = null;

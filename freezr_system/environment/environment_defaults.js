@@ -78,7 +78,7 @@ var autoDbParams = function(callback) {
   async.waterfall([
     // 1 MONGO_EXTERNAL check for environment variables being set at process.env for mongo
     function (cb) {
-      if (  process && process.env && process.env.FREEZR_DB && process.env.FREEZR_DB.toLowerCase()=="mongodb") {  // manually set env variables for mongo
+      if (  process && process.env && process.env.FREEZR_DB && process.env.FREEZR_DB.toLowerCase()=="mongodb" && process.env.DB_HOST && process.env.DB_PASS && process.env.DB_USER) {  // manually set env variables for mongo
         otherOptions.MONGO_EXTERNAL.vars_exist=true
         otherOptions.MONGO_EXTERNAL.params = {
                 dbtype: process.env.FREEZR_DB.toLowerCase(), // should be Mondodb
@@ -102,7 +102,7 @@ var autoDbParams = function(callback) {
               }
               cb(null)
           })
-      } else if (process && process.env && process.env.MONGO_STR){
+      } else if (process && process.env && process.env && process.env.FREEZR_DB && process.env.FREEZR_DB.toLowerCase()=="mongodb" && process.env.MONGO_STR){
         otherOptions.MONGO_EXTERNAL.vars_exist=true
         otherOptions.MONGO_EXTERNAL.params = {
                 dbtype: "mongodb", // should be Mondodb

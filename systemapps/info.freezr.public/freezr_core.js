@@ -388,7 +388,7 @@ freezer_restricted.permissions= {};
      		badBrowser = true;
       }
 
-      const PATHS_WO_TOKEN=['/ceps/app_token','/v1/account/ping','/v1/admin/first_registration']
+      const PATHS_WO_TOKEN=['/ceps/app_token','/v1/account/ping','/v1/admin/first_registration','/v1/account/login']
       if (badBrowser) {
       	callback({"error":true, "message":"You are using a non-standard browser. Please upgrade."});
       } else if (!freezer_restricted.connect.authorizedUrl(url, method)) {

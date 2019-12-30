@@ -258,7 +258,6 @@ const add_app_uses = function(){
 
         app.get('/v1/account/ping', addVersionNumber, account_handler.ping);
         app.post('/v1/account/login', addVersionNumber, account_handler.login);
-        app.post('/v1/account/applogin', addVersionNumber, account_handler.login);
         app.post('/v1/account/applogout', addVersionNumber, account_handler.app_logout);
         app.put ('/v1/account/changePassword.json', userLoggedInRights, account_handler.changePassword);
         app.get('/v1/account/apppassword/generate', addVersionNumber, account_handler.app_password_generate_one_time_pass);
