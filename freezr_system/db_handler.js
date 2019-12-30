@@ -6,6 +6,8 @@ exports.version = "0.0.131"; // Changed names from freezr__db
 //  One $or level query can be put inside the top $and, but cannot add more complexity at lower levels $or can only have equalities. (main $and can also have $lt, $gt)
 //  Constraints have been added for Google App Engine / Datastore compatibility (or until a better translation algorithm is used to do $or queries on gae)
 
+// Note: Added +"" to allrecord._id's to solve mongo Atlas issue
+
 // todo: review and redo db_update as it would only be used for admin
 
 
@@ -226,7 +228,7 @@ exports.db_upsert = function (env_params, appcollowner, idOrQuery, entity, cb) {
       cb(err)
     } else if (!existing_entity || (Array.isArray(existing_entity) && existing_entity.length==0)){
       let id =  (typeof idOrQuery == "string")? idOrQuery: (
-                  (idOrQuery && idOrQuery._id)? idOrQuery._id : null
+                  (idOrQuery && idOrQuery._id)? (idOrQuery._id+"") : null
                 )
       exports.db_insert(env_params, appcollowner, id, entity, null, (err, result)=>{
         cb(err, ((result && result.entity)? result.entity : null))
@@ -236,7 +238,7 @@ exports.db_upsert = function (env_params, appcollowner, idOrQuery, entity, cb) {
         existing_entity=existing_entity[0];
       }
       delete entity._id;
-      idOrQuery = existing_entity._id
+      idOrQuery = existing_entity._id+""
       dbToUse(env_params).db_update(env_params, appcollowner, idOrQuery, entity, {replaceAllFields:true}, cb)
         // todo if returns nmodified==0, then throw error
     }
@@ -416,7 +418,7 @@ exports.get_or_set_app_token_for_logged_in_user = function (env_params, device_c
       //onsole.log("sending back ",results[0])
       callback(null, results[0])
     } else {
-      let record_id = (results && results[0] && results[0]._id)? results[0]._id:null;
+      let record_id = (results && results[0] && results[0]._id)? (results[0]._id+""):null;
       let write = {
         'logged_in':true,
         'source_device':device_code,
@@ -490,7 +492,7 @@ exports.get_app_token_onetime_pw_and_update_params = function(env_params, device
         changes = {}
         if (params.expiry) changes.expiry = params.expiry
         if (params.one_device || params.one_device===false) changes.one_device =  params.one_device;
-        exports.db_update (env_params, APP_TOKEN_APC, record._id, changes, null,function(err, results) {
+        exports.db_update (env_params, APP_TOKEN_APC, record._id+"", changes, null,function(err, results) {
             if (err) {callback(err)} else {callback(null, record.app_token)}
           })
       }
@@ -515,7 +517,7 @@ exports.get_app_token_record_using_pw_and_mark_used = function(env_params, sessi
       } else if (helpers.expiry_date_passed(record.expiry)){
         callback(helpers.error("password_expired","One time password has expired."))
       } else {
-        exports.db_update (env_params, APP_TOKEN_APC, record._id,
+        exports.db_update (env_params, APP_TOKEN_APC, record._id+"",
           {date_used:(new Date().getTime()), user_device:session_device_code}, null,function(err, results) {
             if (err) {callback(err)} else {callback(null, record.app_token)}
           })
@@ -960,7 +962,7 @@ exports.updatePermission = function(env_params, oldPerm, action, newPerms, callb
         callback(helpers.missing_data("permission data", "db_handler", exports.version, "updatePermission"))
     } else if (action == "OutDated") {
       exports.db_update (env_params, PERMISSION_APC,
-        {_id: oldPerm._id},  //idOrQuery,
+        {_id: oldPerm._id+""},  //idOrQuery,
          {'OutDated':true}, // updates_to_entity
          {replaceAllFields:false},
          callback);
@@ -972,7 +974,7 @@ exports.updatePermission = function(env_params, oldPerm, action, newPerms, callb
         newPerms.permitter = oldPerm.permitter
 
         exports.db_update (env_params, PERMISSION_APC,
-          {_id: oldPerm._id},  //idOrQuery,
+          {_id: oldPerm._id+""},  //idOrQuery,
           newPerms, // updates_to_entity
           {replaceAllFields:true},
           callback)

@@ -316,7 +316,7 @@ exports.login_for_app_token = function (req, res){ // uses onetime password
     }
   ],
   function (err, app_token) {
-    //onsole.log("end of login_for_app_token - got token",app_token)
+    console.log("end of login_for_app_token - got token",app_token)
     if (err) {
       console.warn(err)
       helpers.send_failure(res, err,"account_handler", exports.version,"login_for_app_token");
@@ -360,7 +360,7 @@ exports.app_logout = function (req, res) {
       console.warn(err)
       helpers.send_failure(res, err, "account_handler", exports.version, "app_logout");
     } else {
-      let thequery = results[0]._id; // todo - theoretically there could be multiple and the right one need to be found
+      let thequery = results[0]._id+""; // todo - theoretically there could be multiple and the right one need to be found
       let nowDate = new Date().getTime() - 1000
       db_handler.reset_token_cache(app_token);
       db_handler.db_update(req.freezr_environment, APP_TOKEN_APC, thequery, {expiry:nowDate},{replaceAllFields:false, multi:true}, (err, results) =>{
@@ -1019,7 +1019,7 @@ removeAllAccessibleObjects = function(env_params, user_id, requestor_app, reques
             //onsole.log({collections_affected})
             async.forEach(results, function (acc_obj, cb2) {
                 //onsole.log("setting "+acc_obj._id)
-                db_handler.db_update(env_params, accessibles_collection, acc_obj._id,
+                db_handler.db_update(env_params, accessibles_collection, (acc_obj._id+""),
                     {granted:false, '_date_Modified' : (new Date().getTime())},
                     cb2);
                 },
@@ -1071,7 +1071,7 @@ removeAllAccessibleObjects = function(env_params, user_id, requestor_app, reques
                               }
                               idx = collections_affected[collection_name].indexOf(requestor_app+"/"+permission_name);
                               if (idx>=0) collections_affected[collection_name].splice(idx,1) // should always be the case
-                              db_handler.db_update (req.freezr_environment, appcollowner, anObject._id,
+                              db_handler.db_update (req.freezr_environment, appcollowner, (anObject._id+""),
                                    {'_date_Modified' : (new Date().getTime())}, // updates_to_entity
                                    {replaceAllFields:false}, // options
                                    cb3);

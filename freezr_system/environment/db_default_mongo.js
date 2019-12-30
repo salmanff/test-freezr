@@ -149,7 +149,7 @@ exports.db_update = function (env_params, appcollowner, idOrQuery, updates_to_en
     // In replaceAllFields: function needs to take _date_Created and _owner from previous version and add it here
     // TODO NOW - make sure that for update, entity must exist, otherwise, need to add _date_Created and _onwer etc
 
-    //onsole.log("db_update in mongo idOrQuery ",idOrQuery, "options",options)
+    //onsole.log("db_update in mongo idOrQuery ",idOrQuery, "type:" ,(typeof idOrQuery),  "options",options)
 
     options = options || {};
     get_coll(appcollowner.app_name, appcollowner.collection_name, (err, theCollection) =>{
@@ -214,7 +214,7 @@ exports.db_remove = function(env_params, appcollowner, idOrQuery, options, callb
   }
 }
 const objectifyId = function (query) {
-  //onsole.log("onjectifying ",query)
+  //onsole.log("onjectifying ",query,"typeof query",typeof query)
   if (typeof query == "string") {
     return {'_id': get_real_object_id(query)}
   } else if (query && typeof query === 'object') {
