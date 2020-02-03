@@ -6,7 +6,8 @@ The following variables need to have been declared in index.html
 
 */
   var freezr = {
-      'db':{},  // data base related functions
+      'ceps':{},  // data base related functions based on CEPS only
+      'feps':{},  // data base related functions for freezr
       'perms':{}, // grant and query permissions
       'html':{},  // functions to render pages
       'filePath': {},  // functions to generate a correct path to files
@@ -29,26 +30,36 @@ The following variables need to have been declared in index.html
   var freezr_app_version = freezr_app_version? freezr_app_version:"n/a";
   var freezr_server_version = freezr_server_version? freezr_server_version:"n/a";
 // db Functions - data base related functions - to read or write
-freezr.db.write = function(data, options, callback) {
+// console.log 2020 - need new functions for restoreRecord
+freezr.ceps.create = function(data, options={}, callback) {
   // write to the database
-  // options include collection, updateRecord, data_object_id (needed for updateRecord), restoreRecord, confirm_return_fields
-
-  if (!data) {callback({"error":"No data to write."});}
-
-  const contentType='application/json';
-  const postData= JSON.stringify({'data':data, 'options':options});
-  const collection =  (options && options.collection)? options.collection:"main";
-  const app_to_upload = (options.restoreRecord && freezr_app_name=="info.freezr.account")? options.app_name : freezr_app_name;
-
-  const url= "/ceps/write/"+app_to_upload+"/"+collection
-
-  freezer_restricted.connect.send(url, postData, callback, "POST", contentType);
+  // options:
+    // app_table or collection (in which case the app is assumed to be freezr_app_nameapp_table )
+  if (!data_object_id) {
+    callback({"error":"No data to write."});
+  } else {
+    const app_table =  options.app_table || (freezr_app_name+(options.collection? ("."+options.collection):""));
+    let url= "/ceps/write/"+app_table
+    freezer_restricted.connect.send(url, JSON.stringify(data), callback, "POST", 'application/json');
+  }
 };
-freezr.db.upload = function(file, options, callback ) {
+freezr.feps.create = function(data, options={}, callback) {
+  // non ceps options:
+    // data_object_id
+    // upsert
+  if (!data_object_id) {
+    callback({"error":"No data to write."});
+  } else {
+    const app_table =  options.app_table || (freezr_app_name+(options.collection? ("."+options.collection):""));
+    let url= "/feps/create/"+app_table+(options.data_object_id? ("/"+options.data_object_id + (options.upsert? "?upsert=true":"" ) ):"" )
+    freezer_restricted.connect.send(url, JSON.stringify(data), callback, "POST", 'application/json');
+  }
+};
+freezr.feps.upload = function(file, options, callback ) {
   // upload a file and record it in the database
   // options can be: data (a json of data related to file) and updateRecord
   // and file specific ones: targetFolder, fileName, fileOverWrite
-  // For files uploaded, colelction is always "files"
+  // For files uploaded, collection is always "files"
 
   var url= "/ceps/upload/"+freezr_app_name;
   var uploadData = new FormData();
@@ -61,44 +72,108 @@ freezr.db.upload = function(file, options, callback ) {
 
   freezer_restricted.connect.send(url, uploadData, callback, "PUT", null);
 };
-freezr.db.getById = function(data_object_id, options, callback ) {
+freezr.ceps.getById = function(data_object_id, options={}, callback ) {
   // get a specific object by object id
-  // options are collection_name, permission_name
-  if (!data_object_id) {callback({"error":"No id sent."});}
-  var requestee_app   = (!options || !options.requestee_app)? freezr_app_name: options.requestee_app;
-  var collection_name = (options && options.collection_name)? options.collection_name : "main";
-  var permission_name = (options && options.permission_name)? options.permission_name : null;
-  let user_id         = (options && options.user_id)? options.user_id : null;
-
-  let url = '/ceps/get/'+requestee_app+'/'+collection_name+(user_id? ('/'+user_id):'')+'/'+data_object_id+ "?"+(requestee_app==freezr_app_name? "":("requestor_app="+freezr_app_name)) + (permission_name? ("permission_name="+permission_name):"")
-  freezer_restricted.connect.read(url, null, callback);
+  // options:
+    // app_table or collection (in which case the app is assumed to be freezr_app_nameapp_table )
+  if (!data_object_id) {
+    callback({"error":"No id sent."});
+  } else {
+    const requestee_app  = options.requestee_app || freezr_app_name;
+    const app_table =  options.app_table || (requestee_app+(options.collection? ("."+options.collection):""));
+    const url= "/ceps/read/"+app_table+'/'+data_object_id
+    freezer_restricted.connect.read(url, null, callback);
+  }
 }
-freezr.db.query = function(options, callback) {
+freezr.feps.getById = function(data_object_id, options={}, callback ) {
+  // additional feps options: permission_name and user_id
+  if (!data_object_id) {
+    callback({"error":"No id sent."});
+  } else {
+    const requestee_app  = options.requestee_app || freezr_app_name;
+    const app_table =  options.app_table || (requestee_app+(options.collection? ("."+options.collection):""));
+    const permission_name = options.permission_name || null;
+    const user_id = options.user_id || null;
+    let url = '/feps/read/'+app_table+'/'+data_object_id+(user_id? ('/'+user_id):'')+ "?"+(requestee_app==freezr_app_name? "":("requestor_app="+freezr_app_name)) + (permission_name? ("permission_name="+permission_name):"")
+    freezer_restricted.connect.read(url, null, callback);
+  }
+}
+freezr.ceps.getquery = function(options={}, callback) {
   // queries db
-  // options are:
-    // permission_name
-    // collection - default is to use the first in list for object_delegate
-    // app_name can be added optionally to cehck against the app_config permission (which also has it)
-    // query_params is any list of query parameters
+  // options:
+    // app_table or collection (in which case the app is assumed to be freezr_app_nameapp_table )
+    // q: list of queries eg{field:value, field, value} - can also have (_date_modified : {$lt: value})
+  const app_table =  options.app_table || (freezr_app_name+(options.collection? ("."+options.collection):""));
+  let query_parts=[]
+  if (options.q) {
+    for (param in options.q) {
+      if (param=="_date_modified" && options.q._date_modified.$lt && !isNaN(options.q._date_modified.$lt) ) {
+        options.q._modified_before=options.q._date_modified.$lt
+      } else if (param=="_date_modified" && options.q._date_modified.$gt && !isNaN(options.q._date_modified.$gt) ) {
+        options.q._modified_after=options.q._date_modified.$gt
+      }
+      if (typeof options.q[param] == "object"){
+        delete options.q[param]
+        if (param != "_date_modified") console.warn("Cannot have complex queries in ceps at this point "+param+" is invalid.")
+      }
+    }
+  }
+  const url = '/ceps/query/'+app_table;
+  freezer_restricted.connect.read(url, options.q, callback);
+}
+freezr.feps.postquery = function(options={}, callback) {
+  // additional feps options:
+    // permission_name, user_id (which is the requestee id)
+    // app_name can be added optionally to check against the app_config permission (which also has it)
+    // q is any list of query parameters, sort is sort fields
     // only_others excludes own records
+  const app_table =  options.app_table || (freezr_app_name+(options.collection? ("."+options.collection):""));
 
-  if (!options) options = {};
-  var url = '/ceps/query/'+(options.app_name || freezr_app_name);
-
+  var url = '/ceps/query/'+(options.app_name || freezr_app_name)+(options.collection? ('.'+options.collection):'');
   if (options.app_name && options.app_name == "info.freezr.admin") url='/v1/admin/dbquery/'+options.collection
   freezer_restricted.connect.send(url, JSON.stringify(options), callback, 'POST', 'application/json');
 }
-freezr.db.update = function(data, options, callback) {
+freezr.ceps.update = function(data={}, options={}, callback) {
   // simple record update, assuming data has a ._id object
-  // options can have collection
-  if (!data) {callback({"error":"No data sent."});}
-  if (!data._id) {callback({"error":"No _id to update."});}
-  if (!options) options = {};
-  options.updateRecord = true;
-  options.data_object_id = data._id;
-  freezr.db.write(data, options, callback )
+  // options:
+    // app_table or collection (in which case the app is assumed to be freezr_app_nameapp_table )
+  if (!data._id) {
+    callback({"error":"No _id to update."});
+  } else {
+    const app_table =  options.app_table || (freezr_app_name+(options.collection? ("."+options.collection):""));
+    let url= "/ceps/update/"+app_table+"/"+data._id
+    freezer_restricted.connect.send(url, JSON.stringify(data), callback, "PUT", 'application/json');
+  }
 };
-freezr.db.getByPublicId = function(data_object_id, callback) {
+freezr.feps.update = function(data={}, options={}, callback) {
+  // additional feps options:
+    // setkeys - if true then changes only the keys in the object. (works with one _id)
+    // options.q is the query which is sent, for changing a number of items (acts as if it is setkeys)
+  if (!data._id && !options.q) {
+    callback({"error":"No _id to update... and no query"});
+  } else if (data._id && options.q)  {
+    callback({"error":"need to update either _id or a query - not both"});
+  } else {
+    const app_table =  options.app_table || (freezr_app_name+(options.collection? ("."+options.collection):""));
+    let url= "/feps/update/"+app_table+(data._id?"/"+data._id:"")+(options.setkeys? "?setkeys=true":"")
+    if (options.q) data = {q:options.q, keys:data}
+    freezer_restricted.connect.send(url, JSON.stringify(data), callback, "PUT", 'application/json');
+  }
+};
+freezr.ceps.delete = function(data_object_id, options, callback) {
+  // simple record update, assuming data has a ._id object
+  // options:
+    // app_table or collection (in which case the app is assumed to be freezr_app_nameapp_table )
+  if (!data_object_id) {
+    callback({"error":"No data_id sent."});
+  } else {
+    options = options || {}
+    const app_table =  options.app_table || (freezr_app_name+(options.collection? ("."+options.collection):""));
+    let url= "/ceps/delete/"+app_table+"/"+data_object_id
+    freezer_restricted.connect.send(url, null, callback, "DELETE", 'application/json');
+  }
+};
+freezr.feps.getByPublicId = function(data_object_id, callback) {
   // get a specific public object by its object id
   // app_config needs to be set up for this and item to have been permissioned and tagged as public
   if (!data_object_id) {callback({error:'No id sent.'});}
@@ -106,7 +181,7 @@ freezr.db.getByPublicId = function(data_object_id, callback) {
 
   freezer_restricted.connect.read(url, options, callback);
 }
-freezr.db.publicquery = function(options, callback) {
+freezr.feps.publicquery = function(options, callback) {
   // options can be: app_name, skip, count, user_id, pid
   if (!options) options = {};
   var url = '/v1/pdbq';
@@ -158,8 +233,9 @@ freezr.perms.setObjectAccess = function(permission_name, idOrQuery, options, cal
 }
 
 // PROMISES create freezr.promise based on above
-freezr.promise= {db:{},perms:{}}
-Object.keys(freezr.db     ).forEach(aFunc => freezr.promise.db[aFunc]   =null)
+freezr.promise= {ceps:{},feps:{},perms:{}}
+Object.keys(freezr.ceps     ).forEach(aFunc => freezr.promise.ceps[aFunc]   =null)
+Object.keys(freezr.feps     ).forEach(aFunc => freezr.promise.feps[aFunc]   =null)
 Object.keys(freezr.perms  ).forEach(aFunc => freezr.promise.perms[aFunc]=null)
 Object.keys(freezr.promise).forEach(typeO => {
   Object.keys(freezr.promise[typeO]).forEach(function(freezrfunc) {
@@ -200,29 +276,6 @@ freezr.utils.ping = function(options, callback) {
   var url = '/v1/account/ping';
   freezer_restricted.connect.read(url, options, callback);
 
-}
-freezr.utils.logout = function() {
-  if (freezr.app.isWebBased) {
-    console.warn("Warning: On web based apps, logout from freezr home.")
-    if (freezr.app.logoutCallback) freezr.app.logoutCallback({logged_out:false});
-  } else {
-    freezer_restricted.connect.ask("/v1/account/applogout", null, function(resp) {
-      resp = freezr.utils.parse(resp);
-      freezer_restricted.menu.close()
-      if (resp.error) {
-        console.warn("ERROR Logging Out");
-      } else {
-        freezr_app_code = null;
-        freezr_app_token = null;
-        document.cookie = 'app_token_'+freezr_user_id+'='
-        freezr_user_id = null;
-        freezr_server_address= null;
-        freezr_user_is_admin = false;
-
-        if (freezr.app.logoutCallback) freezr.app.logoutCallback(resp);
-      }
-    });
-  }
 }
 freezr.utils.getHtml = function(part_path, app_name, callback) {
   // Gets an html file on the freezr server
@@ -425,7 +478,7 @@ freezer_restricted.permissions= {};
       }
   }
   freezer_restricted.connect.authorizedUrl = function (aUrl, method) {
-  	if ((freezer_restricted.utils.startsWith(aUrl,"http") && freezr.app.isWebBased) || (!freezer_restricted.utils.startsWith(aUrl,freezr_server_address) && !freezr.app.isWebBased) ){
+    if (freezer_restricted.utils.startsWith(aUrl,"http") && (freezr.app.isWebBased || !freezer_restricted.utils.startsWith(aUrl,freezr_server_address) ) ) {
   		//todo - to make authorized sites
   		var warningText = (method=="POST")? "The web page is trying to send data to ":"The web page is trying to access ";
   		warningText = warningText + "a web site on the wild wild web: "+aUrl+" Are you sure you want to do this?"

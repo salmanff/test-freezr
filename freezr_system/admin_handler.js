@@ -243,7 +243,7 @@ exports.first_registration = function (req, callback) {
         temp_environment.dbParams.user /* in case user is deleting all dbparams */ &&
         req.freezr_environment.dbParams.pass)
         temp_environment.dbParams.pass = req.freezr_environment.dbParams.pass;
-    if (helpers.startsWith(temp_environment.dbParams.connectionString,"mongodb") ) {
+    if (helpers.startsWith(temp_environment.dbParams.connectionString,"mongodb") && temp_environment.dbParams.host != "localhost"  ) {
         temp_environment.dbParams.dbtype = "mongo"
     } else if (temp_environment.dbParams.host == "localhost" ){
       temp_environment.dbParams.dbtype = "localhost-mongo"
@@ -572,14 +572,14 @@ exports.dbquery = function(req,res) {
   const appcollowner = {
     app_name:'info_freezer_admin',
     collection_name:req.params.collection_name,
-    _owner:'freezr_admin'
+    owner:'freezr_admin'
   }
   const query = req.body.query_params || {};
 
   // check app token
   let checks = {user_id: req.session.user_id, logged_in:true, requestor_app:"info.freezr.admin"}
   db_handler.check_app_token_and_params(req, checks, function(err, user_id, requestor_app, logged_in) {
-    db_handler.db_find (req.freezr_environment, appcollowner,
+    db_handler.query (req.freezr_environment, appcollowner,
       req.body.query_params,
       {   count: req.body.count,
           skip:  req.body.skip
@@ -624,17 +624,16 @@ function add_user (env_params, valid_unique_user_id, password, valid_email, full
                 full_name: full_name,
                 isAdmin: isAdmin,
                 password: hash,
-                _owner:owner,
-                _date_Created: new Date().getTime(),
-                _date_Modified: new Date().getTime(),
+                _date_created: new Date().getTime(),
+                _date_modified: new Date().getTime(),
                 deleted: false
             };
             const appcollowner = {
               app_name:'info_freezer_admin',
               collection_name:"users",
-              _owner:'freezr_admin'
+              owner:'freezr_admin'
             }
-            db_handler.db_insert (env_params, appcollowner, null, write, null, cb)
+            db_handler.create (env_params, appcollowner, null, write, null, cb)
         }
     ],
     function (err, results) {
@@ -657,9 +656,9 @@ const list_all_oauths = function (req, res) {
     const appcollowner = {
       app_name:'info_freezer_admin',
       collection_name:"oauth_permissions",
-      _owner:'freezr_admin'
+      owner:'freezr_admin'
     }
-    db_handler.db_find(env_params, appcollowner, null,
+    db_handler.query(env_params, appcollowner, null,
       { count: req.body.count,
         skip:  req.body.skip,
         query_params: {enabled:true}
@@ -687,7 +686,7 @@ exports.oauth_perm_make = function (req, res) {
     const appcollowner = {
       app_name:'info_freezer_admin',
       collection_name:"oauth_permissions",
-      _owner:'freezr_admin'
+      owner:'freezr_admin'
     }
 
     async.waterfall([
@@ -709,9 +708,9 @@ exports.oauth_perm_make = function (req, res) {
         // 2. check if person already exists
         function (token_user_id, requestor_app, logged_in, cb) {
             if (is_update) {
-              db_handler.db_getbyid(req.freezr_environment, appcollowner, req.body._id, cb)
+              db_handler.read_by_id(req.freezr_environment, appcollowner, req.body._id, cb)
             } else {
-              db_handler.db_find (req.freezr_environment, appcollowner,
+              db_handler.query (req.freezr_environment, appcollowner,
                                 { source: req.body.source, type: req.body.type, name: req.body.name },
                                 {}, cb)
             }
@@ -734,11 +733,11 @@ exports.oauth_perm_make = function (req, res) {
                   helpers.send_failure(res, helpers.error("Marked as update but no object found"),"admin_handler", exports.version,"oauth_make:item does not exist");
                 } else {
                   update = "new"
-                  db_handler.db_insert (req.freezr_environment, appcollowner, null, params, null, cb)
+                  db_handler.create (req.freezr_environment, appcollowner, null, params, null, cb)
                 }
             } else {
                 update = "update" +(is_update?"":"_unplanned")
-                db_handler.db_update (req.freezr_environment, appcollowner, (results._id+""),
+                db_handler.update (req.freezr_environment, appcollowner, (results._id+""),
                   params, {replaceAllFields:true}, cb)
             }
         },
@@ -803,7 +802,7 @@ exports.oauth_do = function (req, res) {
                     cb(helpers.auth_failure ("admin_handler", exports.version, "oauth_do:validate_state", "No auth state presented", "auth_error_no_state" ))
                 } else if (req.session.oauth_state != req.query.state) {
                    cb(helpers.auth_failure ("admin_handler", exports.version, "oauth_validate_page", "state mismatch", "auth_error_state_mismatch" ))
-                } else if (MAX_TIME <( (new Date().getTime()) - state_params.date_created)) {
+                } else if (MAX_TIME <( (new Date().getTime()) - state_parareated)) {
                     cb(helpers.auth_failure ("admin_handler", exports.version, "oauth_validate_page", "state time exceeded", "auth_error_state_time_exceeded" ))
                 } else {cb(null)}
             },
@@ -856,9 +855,9 @@ var get_auth_permission = function (env_params, params, callback) {
   const appcollowner = {
     app_name:'info_freezer_admin',
     collection_name:"oauth_permissions",
-    _owner:'freezr_admin'
+    owner:'freezr_admin'
   }
-  db_handler.db_find(env_params, appcollowner,
+  db_handler.query(env_params, appcollowner,
       {source: params.source, type: params.type, name: params.name }, {}, callback)
 }
 var clean_unused_states = function () {

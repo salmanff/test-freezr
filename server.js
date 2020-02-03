@@ -3,7 +3,7 @@ const VERSION = "0.0.133";
 
 
 // INITALISATION / APP / EXPRESS
-console.log("=========================  VERSION September 23 2019  =======================")
+console.log("=========================  VERSION Jan 2020  =======================")
 const LISTEN_TO_LOCALHOST_ON_LOCAL = true; // for local development - set to true to access local site at http://localhost:3000, and false to access it at your local ip address - eg http://192.168.192.1:3000 (currently not working)
 
 
@@ -161,7 +161,7 @@ function uploadFile(req,res) {
   upload(req, res, function (err) {
     if (err) {
       helpers.send_failure(res, err, "server.js", VERSION, "uploadFile");
-    } else app_handler.write_data(req,res);
+    } else app_handler.create_file_record(req,res);
   })
 }
 function installAppFromZipFile(req,res) {
@@ -229,7 +229,6 @@ const add_app_uses = function(){
         app.get('/v1/pdbq/:app_name', addVersionNumber, public_handler.dbp_query);
         app.post('/v1/pdbq', addVersionNumber, public_handler.dbp_query);
         app.get('/v1/publicfiles/:requestee_app/:user_id/*', addVersionNumber, public_handler.get_data_object);
-        app.get('/v1/pdb/getbyid/:requestee_app/:collection_name/:data_object_id', app_handler.getDataObject); // here request type must be "one"
 
         app.get('/v1/pobject/:user_id/:app_name/:collection_name/:data_object_id', addVersionNumber, public_handler.generatePublicPage);
 
@@ -310,18 +309,27 @@ const add_app_uses = function(){
 
     // CEPS
         app.post('/ceps/app_token', addVersionNumber, account_handler.login_for_app_token);
-        app.post('/ceps/write/:app_name', userDataAccessRights, app_handler.write_data);
-        app.post('/ceps/write/:app_name/:collection', userDataAccessRights, app_handler.write_data);
-        app.post('/ceps/write/:app_name/:collection/:user_id', userDataAccessRights, app_handler.write_data);
-        app.post('/ceps/query/:requestor_app', userDataAccessRights, app_handler.db_query);
+        app.post('/ceps/write/:app_table', userDataAccessRights, app_handler.write_record);
+        app.get('/ceps/read/:app_table/:data_object_id', userDataAccessRights, app_handler.read_record_by_id);
+        app.get('/ceps/query/:app_table', userDataAccessRights, app_handler.db_query);
+        app.put('/ceps/update/:app_table/:data_object_id', userDataAccessRights, app_handler.write_record)
+        app.delete('/ceps/:app_table/:data_object_id', userDataAccessRights, app_handler.delete_record)
         // app files and pages and user files
-        app.get('/ceps/get/:requestee_app/:collection_name/:user_id/:data_object_id', userDataAccessRights, app_handler.getDataObject);
-        app.get('/ceps/get/:requestee_app/:collection_name/:data_object_id', userDataAccessRights, app_handler.getDataObject);
-        app.get('/ceps/userfile/:requestee_app/:user_id/*', userDataAccessRights, app_handler.getDataObject);
-        app.put('/ceps/upload/:app_name',userDataAccessRights, uploadFile);
-    // userfiles
-        app.get('/v1/userfileGetToken/:requestor_app/:permission_name/:requestee_app/:user_id/*', userDataAccessRights, app_handler.getFileToken); // collection_name is files
 
+        app.post('/feps/write/:app_table', userDataAccessRights, app_handler.write_record);
+        app.post('/feps/write/:app_table/:data_object_id', userDataAccessRights, app_handler.write_record);
+        app.get('/feps/read/:app_table/:data_object_id', userDataAccessRights, app_handler.read_record_by_id);
+        app.get('/feps/read/:app_table/:data_object_id/:requestee_user_id', userDataAccessRights, app_handler.read_record_by_id);
+        app.get('/feps/query/:app_table', userDataAccessRights, app_handler.db_query);
+        app.post('/feps/query/:app_table', userDataAccessRights, app_handler.db_query);
+        app.post('/feps/restore/:app_table', userDataAccessRights, app_handler.restore_record)
+        app.put('/feps/update/:app_table/:data_object_id', userDataAccessRights, app_handler.write_record)
+        app.put('/feps/update/:app_table', userDataAccessRights, app_handler.write_record)
+        app.post('/feps/upsert/:app_table', userDataAccessRights, app_handler.write_record);
+
+    // userfiles
+        app.put('/feps/upload/:app_name',userDataAccessRights, uploadFile);
+        app.get('/v1/userfileGetToken/:permission_name/:requestee_app_name/:requestee_user_id/*', userDataAccessRights, app_handler.read_record_by_id); // collection_name is files
         app.get('/v1/userfiles/:user_id/:requestee_app/*', addVersionNumber, app_handler.sendUserFile); // collection_name is files
 
 

@@ -172,7 +172,7 @@ exports.login = function (req, res) {
 exports.ping = function (req, res) {
   // todo - could also make this token based... so check token to see if logged_in to app etc.. see old code below
     // /v1/account/ping
-    console.log("ping.."+JSON.stringify(req.query))
+    helpers.log(req, "ping.."+JSON.stringify(req.query))
     if (!req.session.logged_in_user_id) {
         helpers.send_success(res, { logged_in: false, server_type:'info.freezr', 'server_version':req.freezr_server_version });
 /* Old code
@@ -209,9 +209,8 @@ exports.ping = function (req, res) {
         helpers.send_success(res, { logged_in: true, 'logged_in_as_admin':req.session.logged_in_as_admin, 'user_id':req.session.logged_in_user_id, server_type:'info.freezr', 'server_version':req.freezr_server_version});
     }
 };
-
 exports.app_password_generate_one_time_pass = function (req, res) {
-  console.log(" app_password_generate_one_time_pass  "+JSON.stringify(req.query));
+  helpers.log(req,"app_password_generate_one_time_pass  "+JSON.stringify(req.query));
   const user_id = req.session.logged_in_user_id;
   const app_name =  (req.query && req.query.app_name)? req.query.app_name: null;
   let expiry = (req.query && req.query.expiry)? parseInt(req.query.expiry) : null;
@@ -246,7 +245,7 @@ exports.app_password_generate_one_time_pass = function (req, res) {
   });
 }
 exports.app_password_update_params = function (req, res) {
-  console.log(" app_password_update_params  "+JSON.stringify(req.query));
+  helpers.log(req,"app_password_update_params  "+JSON.stringify(req.query));
   const user_id = req.session.logged_in_user_id;
   const app_name =  (req.query && req.query.app_name)? req.query.app_name: null;
   let expiry = (req.query && req.query.expiry)? parseInt(req.query.expiry) : null;
@@ -287,9 +286,7 @@ exports.app_password_update_params = function (req, res) {
 exports.login_for_app_token = function (req, res){ // uses onetime password
   console.log("login_for_app_token  "+JSON.stringify(req.body));
 
-  const password = req.body.password,
-        user_id  = req.body.user_id,
-        app_name = req.body.app_name;
+  const {password, user_id, app_name} = req.body;
   let app_token = null
 
   async.waterfall([
@@ -312,10 +309,10 @@ exports.login_for_app_token = function (req, res){ // uses onetime password
 
     // 1. get the password record
     function (cb) {
-        db_handler.get_app_token_record_using_pw_and_mark_used(req.freezr_environment, req.session.device_code, user_id,  app_name, password, cb)
+        db_handler.get_app_token_record_using_pw_and_mark_used(req.freezr_environment, req.session.device_code, req.body, cb)
     }
   ],
-  function (err, app_token) {
+  function (err, app_token, expires_in) {
     //onsole.log("end of login_for_app_token - got token",app_token)
     if (err) {
       console.warn(err)
@@ -323,7 +320,7 @@ exports.login_for_app_token = function (req, res){ // uses onetime password
     } else  if (!app_token){
       helpers.send_failure(res, helpers.error("Could not get app token for "+app_name),"account_handler", exports.version,"login_for_app_token");
     } else  {
-      helpers.send_success(res, { app_token: app_token, user_id:user_id, app_name: app_name});
+      helpers.send_success(res, { app_token: app_token, user_id:user_id, app_name: app_name, expires_in:expires_in});
     }
   });
 }
@@ -331,7 +328,7 @@ exports.login_for_app_token = function (req, res){ // uses onetime password
 const APP_TOKEN_APC = {
   app_name:'info_freezer_admin',
   collection_name:'app_tokens',
-  _owner:'freezr_admin'
+  owner:'freezr_admin'
 }
 exports.logout_page = function (req, res) {
   // /account/logout
@@ -339,7 +336,7 @@ exports.logout_page = function (req, res) {
   //onsole.log("expire_device_tokens", thequery)
   let nowDate = new Date().getTime() - 1000
   db_handler.reset_token_cache();
-  db_handler.db_update(req.freezr_environment, APP_TOKEN_APC, thequery, {expiry:nowDate},{replaceAllFields:false, multi:true}, (err, results) =>{
+  db_handler.update(req.freezr_environment, APP_TOKEN_APC, thequery, {expiry:nowDate},{replaceAllFields:false, multi:true}, (err, results) =>{
     if (err) {
       helpers.send_internal_err_page(res, "account_handler", exports.version, "logout_page", "Could not log off as the various app tokens could not be de-authorized. Please try again." )
     } else {
@@ -363,7 +360,7 @@ exports.app_logout = function (req, res) {
       let thequery = results[0]._id+""; // todo - theoretically there could be multiple and the right one need to be found
       let nowDate = new Date().getTime() - 1000
       db_handler.reset_token_cache(app_token);
-      db_handler.db_update(req.freezr_environment, APP_TOKEN_APC, thequery, {expiry:nowDate},{replaceAllFields:false, multi:true}, (err, results) =>{
+      db_handler.update(req.freezr_environment, APP_TOKEN_APC, thequery, {expiry:nowDate},{replaceAllFields:false, multi:true}, (err, results) =>{
         if (err) {
           helpers.send_failure(res, err, "account_handler", exports.version, "app_logout");
         } else {
@@ -517,7 +514,6 @@ exports.get_file_from_url_to_install_app = function(req,res) {
   // app.post ('/v1/account/app_install_from_url.json', userDataAccessRights, addVersionNumber, account_handler.get_file_from_url_to_install_app);
   //onsole.log("get_file_from_url_to_install_app",req.body)
 
-
   const fs = require('fs');
   const request = require('request');
 
@@ -549,7 +545,6 @@ exports.get_file_from_url_to_install_app = function(req,res) {
         return cb(err);
     });
   };
-
 
   let partialPathDir = file_handler.partPathToUserAppFiles (null, req.body.app_name+".zip").slice(1)
 
@@ -877,7 +872,6 @@ exports.appMgmtActions  = function (req,res) /* deleteApp updateApp */ {
   })
 }
 
-
 // PERMISSSIONS
 exports.changeNamedPermissions = function(req, res) {
   //app.put ('/v1/permissions/change/:requestee_app/:source_app_code', userDataAccessRights, account_handler.changePermissions);
@@ -886,7 +880,7 @@ exports.changeNamedPermissions = function(req, res) {
   if (req.body.changeList && req.body.changeList.length==1 && req.body.changeList[0].permission_name && req.body.changeList[0].action && req.body.changeList[0].requestee_app && req.body.changeList[0].requestor_app) {
     let permission_name = req.body.changeList[0].permission_name;
     let action = req.body.changeList[0].action;
-    let requestee_app = req.body.changeList[0].requestee_app;
+    let requestee_app_table = req.body.changeList[0].requestee_app_table;
     let requestor_app  = req.body.changeList[0].requestor_app;
 
     var app_config, app_config_permissions, schemad_permission;
@@ -901,9 +895,7 @@ exports.changeNamedPermissions = function(req, res) {
           app_config = the_app_config;
 
           app_config_permissions = (app_config && app_config.permissions && Object.keys(app_config.permissions).length > 0)? JSON.parse(JSON.stringify( app_config.permissions)) : null;
-          schemad_permission = db_handler.permission_object_from_app_config_params(app_config_permissions[permission_name], permission_name, requestee_app, requestor_app);
-          if (schemad_permission && (typeof schemad_permission.sharable_groups == "string" || !isNaN(schemad_permission.sharable_groups))) schemad_permission.sharable_groups = [schemad_permission.sharable_groups];
-
+          schemad_permission = db_handler.permission_object_from_app_config_params(app_config_permissions[permission_name], permission_name, requestee_app_table, requestor_app);
           //onsole.log("Schemad permission is "+JSON.stringify(schemad_permission))
 
           if (!schemad_permission) {
@@ -912,18 +904,16 @@ exports.changeNamedPermissions = function(req, res) {
             cb(helpers.invalid_data("Invalid permission name: "+permission_name+".","account_handler", exports.version, "changeNamedPermissions"));
           } else if (helpers.permitted_types.type_names.indexOf(schemad_permission.type)<0  ) {
             cb(helpers.invalid_data("Permitted types can only be specific types not "+schemad_permission.type+".","account_handler", exports.version, "changeNamedPermissions"));
-          } else if (schemad_permission.type == "object_delegate" && helpers.permitted_types.groups_for_objects.indexOf(schemad_permission.sharable_groups[0])<0  ) {
-            cb(helpers.invalid_data("Object delegates can only have specified sharable groups, not "+schemad_permission.sharable_groups[0]+".","account_handler", exports.version, "changeNamedPermissions"));
-          } else if (schemad_permission.sharable_groups && schemad_permission.sharable_groups.length>1  ) {
-            cb(helpers.invalid_data("Only one sharable_group can be permissioned now "+schemad_permission.sharable_groups.join(',')+".","account_handler", exports.version, "changeNamedPermissions"));
-          } else if ((schemad_permission.type == "folder_delegate" || schemad_permission.type == "field_delegate") && helpers.permitted_types.groups_for_fileds.indexOf(schemad_permission.sharable_groups[0])<0  ) {
-            cb(helpers.invalid_data("Field / folder delegates can only have specified sharable groups, not "+schemad_permission.sharable_groups[0]+".","account_handler", exports.version, "changeNamedPermissions"));
-          } else if (schemad_permission.sharable_groups=="public" && schemad_permission.requestee_app !=schemad_permission.requestor_app) {
+          } else if (schemad_permission.type == "object_delegate" && helpers.permitted_types.groups_for_objects.indexOf(schemad_permission.sharable_group)<0  ) {
+            cb(helpers.invalid_data("Object delegates can only have specified sharable groups, not "+schemad_permission.sharable_group+". App:"+requestor_app,"account_handler", exports.version, "changeNamedPermissions"));
+          } else if (schemad_permission.sharable_groups /* old way */ || !schemad_permission.sharable_group || Array.isArray(schemad_permission.sharable_group)  ) {
+            cb(helpers.invalid_data("One and only one sharable_group can be permissioned now - crrect app config for "+requestor_app+".","account_handler", exports.version, "changeNamedPermissions"));
+          } else if (schemad_permission.sharable_group=="public" && !helpers.startsWith( schemad_permission.requestee_app_table,schemad_permission.requestor_app)) {
             cb(helpers.invalid_data("you can only make data public via its own app","account_handler", exports.version, "changeNamedPermissions"));
-          } else if (permission_name && action && requestor_app && requestee_app &&  schemad_permission && (schemad_permission.collection || schemad_permission.collections  || (schemad_permission.type == "outside_scripts" && schemad_permission.script_url && helpers.startsWith(schemad_permission.script_url,"http") )  ) ) {
+          } else if (permission_name && action && requestor_app && requestee_app_table &&  schemad_permission && (schemad_permission.collection || schemad_permission.collections  || (schemad_permission.type == "outside_scripts" && schemad_permission.script_url && helpers.startsWith(schemad_permission.script_url,"http") )  ) ) {
             cb(null)
           } else {
-            console.warn(permission_name ,action , requestor_app , requestee_app)
+            console.warn(permission_name ,action , requestor_app , requestee_app_table)
             cb(helpers.missing_data("permission related data"));
           }
         },
@@ -936,14 +926,14 @@ exports.changeNamedPermissions = function(req, res) {
 
         // 3. get current permission record
         function (token_user_id, token_requestor_app, token_logged_in, cb) {
-          db_handler.permission_by_owner_and_permissionName(req.freezr_environment, req.session.logged_in_user_id, requestor_app, requestee_app, permission_name, cb);
+          db_handler.permission_by_owner_and_permissionName(req.freezr_environment, req.session.logged_in_user_id, requestor_app, requestee_app_table, permission_name, cb);
         },
 
         // 4. Make sure of validity and update permission record
         function (results, cb) {
           if (results.length == 0) {
             helpers.warning ("account_handler", exports.version, "changeNamedPermissions","SNBH - permissions should be recorded already via app_config set up");
-            db_handler.create_query_permission_record(req.freezr_environment, req.session.logged_in_user_id, requestor_app, requestee_app, permission_name, schemad_permission, action, cb);
+            db_handler.create_query_permission_record(req.freezr_environment, req.session.logged_in_user_id, requestor_app, requestee_app_table, permission_name, schemad_permission, action, cb);
           } else {
             if (results.length > 1) {
               db_handler.deletePermission(req.freezr_environment, results[1]._id, null);
@@ -966,7 +956,7 @@ exports.changeNamedPermissions = function(req, res) {
         if (action == "Accept") {
           cb(null, {aborted:false})
         } else {
-          removeAllAccessibleObjects(req.freezr_environment, req.session.logged_in_user_id, requestor_app, requestee_app, permission_name, cb);
+          removeAllAccessibleObjects(req.freezr_environment, req.session.logged_in_user_id, requestor_app, requestee_app_table, permission_name, cb);
         }
       },
     ],
@@ -983,7 +973,7 @@ exports.changeNamedPermissions = function(req, res) {
     helpers.send_failure(res, helpers.invalid_data,("One request at a time can be accepted."),"account_handler", exports.version,"changeNamedPermissions");
   }
 }
-removeAllAccessibleObjects = function(env_params, user_id, requestor_app, requestee_app, permission_name, callback) {
+removeAllAccessibleObjects = function(env_params, user_id, requestor_app, requestee_app_table, permission_name, callback) {
     // assumes error checking all done
     // todo 2019 - to review
     var flags = new Flags({'function':'removeAllAccessibleObjects'});
@@ -993,14 +983,14 @@ removeAllAccessibleObjects = function(env_params, user_id, requestor_app, reques
     const accessibles_collection = {
       app_name:'info_freezer_admin',
       collection_name:"accessible_objects",
-      _owner:user_id
+      owner:user_id
     }
 
     async.waterfall([
     // 1.  get all accessibles collection
     function (cb) {
-      db_handler.db_find(env_params, accessibles_collection,
-        {_owner:user_id, permission_name: permission_name, requestor_app: requestor_app, granted:true},
+      db_handler.query(env_params, accessibles_collection,
+        {permission_name: permission_name, requestor_app: requestor_app, granted:true},
         {},
         cb)
     },
@@ -1019,8 +1009,8 @@ removeAllAccessibleObjects = function(env_params, user_id, requestor_app, reques
             //onsole.log({collections_affected})
             async.forEach(results, function (acc_obj, cb2) {
                 //onsole.log("setting "+acc_obj._id)
-                db_handler.db_update(env_params, accessibles_collection, (acc_obj._id+""),
-                    {granted:false, '_date_Modified' : (new Date().getTime())},
+                db_handler.update(env_params, accessibles_collection, (acc_obj._id+""),
+                    {granted:false, '_date_modified' : (new Date().getTime())},
                     cb2);
                 },
                 function (err) {
@@ -1036,17 +1026,18 @@ removeAllAccessibleObjects = function(env_params, user_id, requestor_app, reques
 
     // 4. remove the relevant _accessible_By indicator of the actual objects
     function (cb) {
+      console.warn("todo 2020 - need to replace collection logic with app_table logic")
         async.forEach(collection_list, function (collection_name, cb2) {
             if (collection_name) {
                 //onsole.log("getting collection name "+collection_name+" from requestee_app "+requestee_app)
                 const appcollowner = {
                   app_name:requestee_app,
                   collection_name:collection_name,
-                  _owner:user_id
+                  owner:user_id
                 }
                 what_to_find = {"_accessible_By.group_perms.public": requestor_app+"/"+permission_name};
                     // later add or for other sharable gorups, base don app_config (ie do || for all permitted groups)
-                db_handler.db_find(req.freezr_environment, appcollowner, what_to_find, {}, (err, results)=>{
+                db_handler.query(req.freezr_environment, appcollowner, what_to_find, {}, (err, results)=>{
                   if (err) {
                       flags.add('major_warnings','data_object_update',{err:err,'function':'removeAllAccessibleObjects','async-part':4, 'perm':requestor_app+"/"+permission_name,'message':'error geting data object for '+requestor_app+"/"+permission_name});
                       cb2(null);
@@ -1071,8 +1062,8 @@ removeAllAccessibleObjects = function(env_params, user_id, requestor_app, reques
                               }
                               idx = collections_affected[collection_name].indexOf(requestor_app+"/"+permission_name);
                               if (idx>=0) collections_affected[collection_name].splice(idx,1) // should always be the case
-                              db_handler.db_update (req.freezr_environment, appcollowner, (anObject._id+""),
-                                   {'_date_Modified' : (new Date().getTime())}, // updates_to_entity
+                              db_handler.update (req.freezr_environment, appcollowner, (anObject._id+""),
+                                   {'_date_modified' : (new Date().getTime())}, // updates_to_entity
                                    {replaceAllFields:false}, // options
                                    cb3);
                           }
@@ -1301,9 +1292,9 @@ exports.generatePermissionHTML = function (req, res) {
             sentence+= other_app? ("The app, <b style='color:purple;'>"+aPerm.requestor_app+"</b>,") : "This app"
             sentence += hasBeenAccepted? " is able to ":" wants to be able to "
             if (aPerm.type == "db_query") {
-              sentence += access_word + ": "+(aPerm.return_fields? (aPerm.return_fields.join(", ")) : "ERROR") + " with the following groups: "+((aPerm.sharable_groups && Array.isArray(aPerm.sharable_groups) && aPerm.sharable_groups.length>0)? aPerm.sharable_groups.join(" "):"NONE")+".<br/>";
+              sentence += access_word + ": "+(aPerm.return_fields? (aPerm.return_fields.join(", ")) : "ERROR") + " with the following groups: "+(aPerm.sharable_group || "NONE")+".<br/>";
             } else if (aPerm.type == "object_delegate") {
-              sentence += access_word+ " individual data records with the following groups:  "+(aPerm.sharable_groups? aPerm.sharable_groups.join(" "): "None")+".<br/>";
+              sentence += access_word+ " individual data records with the following group:  "+(aPerm.sharable_group || "None")+".<br/>";
             } else if (aPerm.type == "outside_scripts") {
               sentence = (hasBeenAccepted? "This app can ":"This app wants to ")+" access the following scripts from the web: "+aPerm.script_url+"<br/>This script can take ALL YOUR DATA and evaporate it into the cloud.<br/>";
             }

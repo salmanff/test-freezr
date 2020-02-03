@@ -33,9 +33,9 @@ exports.reloadDb = function (env_params, callback) {
   const appcollowner = {
     app_name:'info_freezer_admin',
     collection_name:'visit_log_daysum',
-    _owner:'freezr_admin'
+    owner:'freezr_admin'
   }
-  db_handler.db_getbyid (env_params, appcollowner, today, (err, object) => {
+  db_handler.read_by_id (env_params, appcollowner, today, (err, object) => {
     //onsole.log("visit_logger got today object :",today)
     if (err) {
       console.warn(err)
@@ -132,14 +132,13 @@ function saveToDb(env_params) {
 	// find one date to log. if more old days exist (unlikely), it will deal with one on each save
 
 	var write = day_db_log[theDateString]
-	write._owner = 'freezr_admin';
   appcollowner = {
     app_name:'info_freezer_admin',
     collection_name:'params',
-    _owner:'freezr_admin'
+    owner:'freezr_admin'
   }
 
-  db_handler.db_upsert (env_params, appcollowner, theDateString, write, (err, entity)=>{
+  db_handler.upsert (env_params, appcollowner, theDateString, write, (err, entity)=>{
     if (err) {
       helpers.state_error("visit_logger", exports.version, "saveToDb", err, "err_writing_logs_to_db")
     } else {
@@ -149,40 +148,6 @@ function saveToDb(env_params) {
     }
 
   })
-
-/* OLD temp DELETE THIS (TODO)
-	async.waterfall([
-        function (cb) {
-        	db_handler.app_db_collection_get('info_freezr_admin', 'visit_log_daysum', cb);
-        },
-        function (theCollection, cb) {
-            dbCollection = theCollection;
-            dbCollection.find({ _id: theDateString }).toArray(cb);
-        },
-        function (results, cb) {
-        	// todo - have a function to "write or update"
-			write._date_Modified =  0 + (new Date().getTime() );
-            if ( (results == null || results.length == 0) ) { // new document
-                write._date_Created = new Date().getTime();
-                write._id = theDateString;
-                dbCollection.insert(write, { w: 1, safe: true }, cb);
-            } else {
-            	delete write._id;
-                dbCollection.update({_id: theDateString },
-                    {$set: write}, {safe: true }, cb);
-            }
-        },
-	],
-    function (err) {
-        if (err) {
-        	helpers.state_error("visit_logger", exports.version, "saveToDb", err, "err_writing_logs_to_db")
-        } else {
-        	if (theDateString != today ) {
-        		delete day_db_log[theDateString]
-        	}
-        }
-    });
-*/
 }
 
 function addRecordToDailySummary(req, prefs, options) {

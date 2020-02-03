@@ -184,7 +184,7 @@ var buttons = {
     document.getElementById("spinner").style.display="block";
     document.getElementById("perms_text").style.display="none";
     document.getElementById("numdaysvalid").value=DEFAULT_EXPIRY_DAYS;
-    document.getElementById("one_device").checked=true;
+    document.getElementById("one_device").checked=false;
     document.getElementById("appNameForApp").innerHTML=args[0];
     document.getElementById("perm_warning").style.display="none"
     document.getElementById("button_savePermsChanges").style.display="none";
@@ -199,7 +199,7 @@ var buttons = {
     let app_name = args[0]
     let expiry = new Date().getTime()
     expiry += DEFAULT_EXPIRY_DAYS * 24 * 3600 * 1000
-    let one_device = true;
+    let one_device = false;
     let options = {app_name, expiry, one_device}
 
     let url = '/v1/account/apppassword/generate';

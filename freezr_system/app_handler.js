@@ -5,10 +5,10 @@ var helpers = require('./helpers.js'),
     db_handler = require("./db_handler.js"),
     user_obj = require("./user_obj.js"),
     async = require('async'),
-    file_handler = require('./file_handler.js');
+    file_handler = require('./file_handler.js'),
+    apc = require('./objects/app_coll_owner_obj.js');
 
 const DEFAULT_COLLECTION_NAME = "main" // if name is not specified
-
 
 exports.generatePage = function (req, res) {
   // '/apps/:app_name' and '/apps/:app_name/:page' (and generateDataPage above)
@@ -190,23 +190,488 @@ var generatePageWithAppConfig = function (req, res, app_config) {
 };
 
 // ceps operations
+exports.write_record = function (req, res){ // create update or upsert
+  // app.post('/ceps/write/:app_table', userDataAccessRights, app_handler.write_record);
+  // app.put('/ceps/update/:app_table/:data_object_id', userDataAccessRights, app_handler.write_record)
+  // app.post('/feps/write/:app_table', userDataAccessRights, app_handler.write_record);
+  // app.post('/feps/write/:app_table/:data_object_id', userDataAccessRights, app_handler.write_record);
+  // app.post('/feps/upsert/:app_table', userDataAccessRights, app_handler.write_record);
 
-exports.write_data = function (req, res){
+  helpers.log (req,"ceps writeData at "+req.url+"body:"+JSON.stringify((req.body && req.body.options)? req.body.options:" none"));
+
+  let user_id, write, data_object_id;
+  let requestor_app, collection_name, app_config, data_model, appcollowner, app_err, app_auth;
+  let own_collection=false
+  const is_upsert = helpers.startsWith(req.url,"/feps/upsert")
+  const is_update = helpers.startsWith(req.url,"/ceps/update") || helpers.startsWith(req.url,"/ceps/update");
+  const is_ceps = helpers.startsWith(req.url,"/ceps/")
+  const is_query_based_update = (!is_ceps && is_update && !req.params.data_object_id && req.body.q && req.body.d)
+  const keys_only = req.query.setkeys? true:false
+
+  async.waterfall([
+    // 1. check app token .. and set user_id based on record if not a param...
+    function (cb) {
+      db_handler.check_app_token_and_params(req, {}, cb)
+    },
+    // 2. get requestor_app to initialise variables and check for completness
+    function (token_user_id, token_app_name, logged_in, cb) {
+        requestor_app = token_app_name;
+
+        appcollowner = new AppCollOwner(req.params.app_table, {requestor_app:requestor_app, owner:token_user_id})
+
+        write = req.body || {};
+        data_object_id= is_update? req.params.data_object_id : ( req.body._id? (req.body._id+"") : null);
+
+        app_err = function (message) {return helpers.app_data_error(exports.version, "write_record", requestor_app, message);}
+        app_auth = function (message) {return helpers.auth_failure("app_handler", exports.version, "write_record", requestor_app+": "+message);}
+
+        if (!is_upsert && !is_update && Object.keys(write).length<=0 ) {
+          cb(app_err("Missing data parameters."));
+        } else if (!appcollowner.own_collection || appcollowner.app_name!=requestor_app) { // note the two conditions are equivalent
+          cb(app_err("CEPs has not defined write permissions - Can only write to tables containing app name"))
+        } else if (helpers.system_apps.indexOf(requestor_app)>-1) {
+          cb(helpers.invalid_data("app name not allowed: "+requestor_app, "account_handler", exports.version, "write_record"));
+        } else if (is_ceps && (is_upsert || (is_update && (!data_object_id  || keys_only)))) {
+          cb(app_err("CEPs is not yet able to do upsert, and key only updates and query based updates."))
+        } else {
+          cb(null);
+        }
+    },
+    // 3. get app config
+    function (cb) {
+      file_handler.async_app_config(requestor_app, req.freezr_environment,cb);
+    },
+    // ... and make sure write object conforms to the model
+    function (got_app_config, cb) {
+      app_config = got_app_config;
+      data_model= (app_config && app_config.collections && app_config.collections[appcollowner.collection_name])? app_config.collections[appcollowner.collection_name]: null;
+
+      if (!newObjectFieldNamesAreValid(req,data_model)) {
+        cb(app_err("invalid field names"));
+      } else if (!collectionIsValid(appcollowner.collection_name,app_config,false)){
+        cb(app_err("Collection name "+appcollowner.collection_name+"is invalid."));
+      } else if (!data_object_id && !is_upsert && !is_update) { // Simple create object with no id
+        cb(null, null);
+      }  else if (is_upsert || (is_update && data_object_id)) { // is_upsert or update
+        db_handler.read_by_id (req.freezr_environment, appcollowner, data_object_id, function(err, results) {
+          cb((is_upsert? null: err), results)
+        })
+      } else if (is_update && is_query_based_update) { // just to mass update
+        cb(null, null)
+      } else {
+        cb(app_err("Malformed path body combo "+JSON.stringify( appcollowner)));
+      }
+    },
+
+    // 4. write
+    function (results, cb) {
+      //onsole.log("Going to write id "+data_object_id+((results && results.length>0)? ("item exists",results): "new item"));
+      if (is_query_based_update){ // no results needed
+        db_handler.update (req.freezr_environment, appcollowner, write.q, write.d,{replaceAllFields:false /*redundant*/}, cb)
+      } else if (results) {
+        if (is_upsert || (is_update && results._date_created /*ie is non empty record*/) ){ // one entity
+          db_handler.update (req.freezr_environment, appcollowner, data_object_id, write,{replaceAllFields:(!keys_only), old_entity:results}, cb)
+        } else {
+          let errmsg = is_upsert? "internal err in old record":"Record exists - use 'update' to update existing records"
+          cb(helpers.auth_failure("app_handler", exports.version, "write_record", requestor_app, errmsg));
+        }
+      } else if (is_update) { // should have gotten results
+        cb(app_err("record not found") );
+      } else { // new document - should not have gotten results
+        db_handler.create(req.freezr_environment, appcollowner, data_object_id, write, {restoreRecord: false}, cb)
+      }
+    }
+    ],
+    function (err, write_confirm) {
+      //onsole.log("err",err,"write_confirm",write_confirm)
+      if (err) {
+        helpers.send_failure(res, err, "app_handler", exports.version, "write_record");
+      } else if (!write_confirm ){
+        helpers.send_failure(res, new Error("unknown write error"), "app_handler", exports.version, "write_record");
+      } else if (is_update || is_upsert){
+        helpers.send_success(res, write_confirm);
+      } else {
+        ({_id, _date_created, _date_modified} = write_confirm.entity)
+        helpers.send_success(res, {_id, _date_created, _date_modified});
+      }
+    });
+}
+exports.read_record_by_id= function(req, res) {
+  //app.get('/ceps/read/:app_table/:data_object_id', userDataAccessRights, app_handler.read_record_by_id);
+  // app.get('/feps/read/:app_table/:data_object_id/:requestee_user_id', userDataAccessRights, app_handler.read_record_by_id);
+    // feps option: "?"+(requestee_app==freezr_app_name? "":("requestor_app="+freezr_app_name)) + (permission_name? ("permission_name="+permission_name):"")
+
+  //  app.get('/v1/userfileGetToken/:permission_name/:requestee_app_name/:requestee_user_id/*', userDataAccessRights, app_handler.read_record_by_id); // collection_name is files
+    // collection name is 'files'
+
+  let permission_name = req.params.permission_name || req.query.permission_name  // params in file get and query for ceps
+  let requestee_user_id = req.params.requestee_user_id;
+  let data_object_id, requestor_app, requestee_app_name, requestor_user_id, collection_name, own_collection;
+
+  let record_is_permitted = false,
+      the_granted_perm = null,
+      resulting_record = null,
+      own_record=false;
+  let app_err, app_auth;
+
+  // Initialize variables
+  let request_file = helpers.startsWith(req.path,"/v1/userfile") ;
+  if (request_file) {
+    requestee_app_name = req.params.requestee_app_name;
+    let parts = req.originalUrl.split('/');
+    //data_object_id=unescape(parts.slice(7))
+    data_object_id=parts[5]+"/"+unescape(parts.slice(6))
+    if (data_object_id.indexOf('?')>-1) {
+      let parts2=data_object_id.split('?');
+      data_object_id = parts2[0]
+    }
+    //onsole.log("files url was ",req.originalUrl, "and data_object_id now is ",data_object_id)
+  } else {
+    data_object_id = req.params.data_object_id;
+  }
+
+  async.waterfall([
+    // 1. check app token ..
+    function (cb) {
+      db_handler.check_app_token_and_params(req, {}, cb)
+    },
+    // ... and set app_name and user_id to initialise variables and check
+    function (token_user_id, token_app_name, logged_in, cb) {
+        requestor_user_id = token_user_id;
+        if (!requestee_user_id) requestee_user_id=token_user_id;
+
+        requestor_app = token_app_name;
+        if (request_file) {
+          appcollowner = new AppCollOwner(requestee_app_name, {collection_name:"files", requestor_app:requestor_app, owner:requestee_user_id})
+        } else {
+          appcollowner = new AppCollOwner(req.params.app_table, {requestor_app:requestor_app, owner:requestee_user_id})
+        }
+
+        app_err = function (message) {return helpers.app_data_error(exports.version, "read_record_by_id", requestor_app, message);}
+        app_auth = function (message) {return helpers.auth_failure("app_handler", exports.version, "read_record_by_id", requestor_app+": "+message);}
+
+        if (requestee_app_name == "info.freezr.admin" || requestor_app == "info.freezr.admin") {
+          // NB this should be redundant but adding it in any case
+          cb(app_auth("Should not access admin db via this interface"));
+        } else {
+          if ( requestor_app==appcollowner.app_name && requestor_user_id == requestee_user_id){
+            own_record = true;
+            record_is_permitted = true;
+          }
+          cb(null)
+        }
+    },
+
+    // 2. get item.. if own_record, go to end. if not, get all record permissions
+    function (cb) {
+      db_handler.read_by_id (req.freezr_environment, appcollowner, data_object_id, cb)
+    },
+
+    // 3. get permissions if needbe
+    function (results, cb) {
+      resulting_record = results;
+      if (!resulting_record) {
+        cb(app_err("no related records"))
+      } else if (record_is_permitted) {
+        cb(null, null)
+      } else if (!permission_name){
+        cb(app_auth("Need to specify permission name to get object "));
+      } else {
+        db_handler.granted_permissions_by_owner_and_apps (req.freezr_environment, req.params.user_id, req.params.requestor_app, req.params.requestee_app, cb)
+      }
+    },
+
+    // 4.. and check against record permissions - Note this step would be redundant if database updates properly after a premission has been revoked, but even if that was relatively assured (which it isnt as of 2019, this is provides extra reducnacy)
+    function (permissions_granted, cb) {
+        if (record_is_permitted) {
+          cb(null)
+        } else if (!permissions_granted || permissions_granted.length==0) {
+            cb(app_auth("No granted permissions exist"));
+        } else {
+          let granted_perm_names = [], have_access = false
+          permissions_granted.forEach(aPerm => {granted_perm_names.push(aPerm.permission_name)})
+
+          function check_access(record_accesses){
+            let result = null
+            record_accesses.forEach(aPerm => {
+              let [app_name, perm_name] = aPerm.split('/')
+              if (requestor_app == requestee_app_name && granted_perm_names.indexOf(permission_name)>-1) {
+                result = true;
+                the_granted_perm=aPerm;
+              }
+            })
+            return result
+          }
+
+          let loggedInAccess = (resulting_record._accessible_By && resulting_record._accessible_By.group_perms && resulting_record._accessible_By.group_perms.logged_in)? resulting_record._accessible_By.group_perms.logged_in: null;
+          if (loggedInAccess && loggedInAccess.length>0) {
+            console.warn("todo - need to make sure type of token is for logged in people so can have different types eg authed or logged_in")
+            have_access = check_access(loggedInAccess)
+          }
+          let publicAccess = (resulting_record._accessible_By && resulting_record._accessible_By.group_perms && resulting_record._accessible_By.group_perms.public)? resulting_record._accessible_By.group_perms.public : null;
+          if (!have_access && publicAccess && publicAccess.length>0) {
+              have_access = have_access || check_access(publicAccess);;
+          }
+          let userAccess = (resulting_record._accessible_By && resulting_record._accessible_By.user_perms && resulting_record._accessible_By.user_perms[req.params.requestor_id])? resulting_record._accessible_By.user_perms[req.params.requestor_id] : null;
+          if (!have_access && userAccess && userAccess.length>0) {
+            have_access = have_access || check_access(userAccess);;
+          }
+          if (!have_access) {
+            cb(app_auth("No granted permissions match"));
+          } else {
+            record_is_permitted = true;
+            cb(null)
+          }
+        }
+    },
+
+
+    ],
+    function (err) {
+        //onsole.log("got to end of read_record_by_id");
+        if (!record_is_permitted || err) {
+          helpers.send_failure(res, err, "app_handler", exports.version, "read_record_by_id");
+        } else if (request_file){
+          helpers.send_success(res, {'fileToken':getOrSetFileToken(requestee_user_id,requestee_app_name,data_object_id)});
+        } else {
+          // todo - permission_model has to come from the perm
+          if (requestee_user_id!=requestor_user_id && !request_file && the_granted_perm && the_granted_perm.return_fields && the_granted_perm.return_fields.length>0) {
+              let new_record = {};
+              for (var i=0; i<the_granted_perm.return_fields.length; i++) {
+                  new_record[the_granted_perm.return_fields[i]] = resulting_record[the_granted_perm.return_fields[i]];
+              }
+              resulting_record = new_record;
+          }
+          helpers.send_success(res, resulting_record);
+        }
+    });
+}
+exports.db_query = function (req, res){
+    helpers.log (req,"db_query: "+req.url+" body "+JSON.stringify(req.body))
+    //onsole.log("db_query from: "+req.params.requestor_app+" - "); // +JSON.stringify(req.body)
+
+    // app.post('/ceps/query/:app_table', userDataAccessRights, app_handler.db_query);
+    // app.put('/ceps/update/:app_table', userDataAccessRights, app_handler.update_record)
+
+    let params = {}
+
+    req.app_auth_err = function (message) {return helpers.auth_failure("app_handler", exports.version, "db_query", message+" "+req.params.app_table);}
+
+    if (!req.body) req.body = {q:req.query} // in case of a GET statement (ie move query to body)
+
+    let permission_name = req.body.permission_name;
+    let appcoll, requestor = {};
+
+    db_handler.check_app_token_and_params(req, {}, function(err, token_user_id, token_app_name, logged_in) {
+      //onsole.log("get data object req.params.requestor_app:"+ req.params.requestor_app+"  requestor_app"+requestor_app)
+      requestor.user_id = token_user_id;
+      requestor.app_name = token_app_name;
+
+      appcoll = appcoll_from_app_table(req.params.app_table, requestor.app_name)
+      // todo - use new appcollowner
+
+      // req.params.user_id is requestee
+      if (err) {
+        console.warn(err)
+        helpers.send_failure(res, req.app_auth_err("error getting device token"), "app_handler", exports.version, "db_query");
+      } else if (requestor.app_name == "info.freezr.admin") {
+          // NB this should be redundant but adding it in any case
+          helpers.send_failure(res, req.app_auth_err("Should not access admin db via this interface"), "app_handler", exports.version, "db_query");
+      } else if (!req.body.permission_name) { //ie own_record
+        if (appcoll.own_collection) {
+          let usersWhoGrantedAppPermission = [requestor.user_id]; // if requestor is same as requestee then user is automatically included
+          do_db_query(req,res, requestor, appcoll, usersWhoGrantedAppPermission, {})
+        } else {
+          helpers.send_failure(res, req.app_auth_err("Need a persmission name to access others' apps and records "+JSON.stringify(requestor) ), "app_handler", exports.version, "db_query");
+        }
+      } else {
+        options = {only_others: req.body.only_others, q:req.body.q}
+        get_all_query_perms(req.freezr_environment , requestor, appcoll, permission_name, options,
+          function(err, usersWhoGrantedAppPermission, app_config_permission_schema){
+            console.warn("Need to redo permissions on records.")
+            if (err) {
+              helpers.send_failure(res, err, "app_handler", exports.version, "get_all_query_perms");
+            } else {
+              do_db_query(req,res, requestor, appcoll, usersWhoGrantedAppPermission, app_config_permission_schema)
+            }
+          }
+        )
+      }
+    })
+}
+do_db_query = function (req,res, requestor, appcoll, usersWhoGrantedAppPermission, app_config_permission_schema) {
+  // does the db_query after basic security checks - ie who has authorised tthe request and app tokem validation
+  // all appcoll paramatewrs must have beeb checked before do_db_query
+  //onsole.log("doing query for usersWhoGrantedAppPermission", usersWhoGrantedAppPermission)
+
+  //onsole.log("do db query",req.body.query_params,"usersWhoGrantedAppPermission:",usersWhoGrantedAppPermission, "appcoll",appcoll)
+  // to do - not ethat count right now is a count per person
+
+  let skip = req.body.skip? parseInt(req.body.skip): 0;
+  let count= req.body.count? parseInt(req.body.count):(req.params.max_count? req.params.max_count: 50);
+  if (app_config_permission_schema.max_count && count+skip>app_config_permission_schema.max_count) {
+    count = Math.max(0,app_config_permission_schema.max_count-skip);
+  }
+  let sort = req.body.sort || {'_date_modified': -1} // default
+  //onsole.log("In query to find", JSON.stringify (req.body.query_params))
+  //onsole.log("In query sort is ",req.body.sort)
+  //onsole.log("In query count is ",req.body.count)
+  let all_permitted_records = [], return_fields= null;
+
+  if (app_config_permission_schema && app_config_permission_schema.return_fields && app_config_permission_schema.return_fields.length>0) {
+    return_fields = app_config_permission_schema.return_fields;
+    return_fields.push("_date_modified");
+  }
+  const reduce_to_permitted_fields = function(record,  return_fields) {
+    if (!return_fields) return record;
+    let return_obj = {};
+    for (a_field in return_fields) return_obj[a_field] = record[a_field];
+    return return_obj;
+  }
+
+  async.forEach(usersWhoGrantedAppPermission, function (permitor, cb) {
+    //onsole.log("setting "+acc_obj._id)
+    appcoll.owner = permitor
+    if (app_config_permission_schema.type=="object_delegate") {
+      let perm_string = permission_attributes.requestor_app+"/"+permission_attributes.permission_name
+      if (app_config_permission_schema.sharable_group == 'public') q._accessible_By.group_perms.public = perm_string
+      if (app_config_permission_schema.sharable_group == 'logged_in' && req.session.logged_in_user_id) q._accessible_By.group_perms.logged_in = perm_string
+      if (app_config_permission_schema.sharable_group == 'user' && requestor.user_id) q['_accessible_By.user_perms.'+requestoruser_id]=perm_string;
+    }
+    db_handler.query(req.freezr_environment, appcoll,req.body.q,
+      {sort: sort, count:count, skip:skip}, function(err, results) {
+      if (app_config_permission_schema) results.map(anitem => anitem._owner = permitor)
+      for (record of results) {
+        // console.log("todo - make this functional - console.log 2020")
+        all_permitted_records.push(reduce_to_permitted_fields(record, return_fields));
+        //onsole.log("all_permitted_records",all_permitted_records)
+      }
+      cb(null)
+    })
+  },
+  function (err) {
+    if (req.internalcallfwd){
+      req.internalcallfwd(err, all_permitted_records)
+    } else if (err) {
+      helpers.send_failure(res, err, "app_handler", exports.version, "do_db_query");
+    } else {
+      helpers.send_success(res, all_permitted_records);
+    }
+  })
+}
+get_all_query_perms = function (env_params , requestor, appcoll, permission_name, options, callback) {
+  // reviews all query params to see who has granted permission on which app
+  // This is only called upon when there is a permission_name - ie query is not for the app's own data (same user and same app)
+  let app_config, app_config_permission_schema;
+  let usersWhoGrantedAppPermission =[];
+    // if requestor is same as requestee then user is automatically included
+
+  async.waterfall([
+    // 1 get app config
+    function (cb) {
+      file_handler.async_app_config(requestor.app_name, env_params,cb);
+    },
+    // .. and app_config_permission_schema and check all data needed exists
+    function (the_app_config, cb) {
+      app_config = the_app_config;
+      app_config_permission_schema = (app_config && app_config.permissions)? app_config.permissions[permission_name]: null;
+
+      if (!app_config){
+        cb(req.app_err("Missing app_config for ",requestor.app_name));
+      } else if (!app_config_permission_schema || !permission_name){
+        cb(req.app_err("Missing permission_schema for ",requestor.app_name));
+      } else if (!app_config_permission_schema.sharable_group){
+        cb(req.app_err("No sharable groups declared for permission ",permission_name,requestor.app_name));
+      } else if (!app_config_permission_schema.app_table) {
+        cb(req.app_err("No app_table declared for permission ",permission_name,requestor.app_name));
+      } else if (appcoll.app_table != app_config_permission_schema.app_table) {
+        cb(req.app_auth_err("collection not allowed by permission"))
+      } else {
+        cb(null);
+      }
+    },
+
+    // 2. Get app permission
+    function (cb) {
+        db_handler.all_granted_app_permissions_by_name(env_params, requestor.app_name, appcoll.app_table, permission_name, null , cb)
+    },
+    // ... and add the people who have granted the permission to usersWhoGrantedAppPermission list
+    function (allUserPermissions, cb) {
+      if (appcoll.app_name == requestor.app_name){
+        if (options.only_others) {
+          usersWhoGrantedAppPermission =  helpers.removeFromListIfExists (allUserPermissions, requestor.user_id)
+        } else {
+          usersWhoGrantedAppPermission =  helpers.addToListAsUnique (allUserPermissions, requestor.user_id)
+        }
+      }
+      if (usersWhoGrantedAppPermission.length>0) {
+          cb(null)
+      } else {
+          cb(app_auth_err("No users have granted permissions for permission:"+req.body.permission_name));
+      }
+    },
+
+    // adds specific criteria to the query parameters console.log 2020 recheck this check_query_params_permitted
+    function (cb) {
+      if (app_config_permission_schema.type=="db_query") {
+        // permitted query_params - todo - this should bemoved to another function
+        const check_query_params_permitted = function(query_params,permitted_fields){
+          let err = null;
+          if (isArray(query_params)) {
+            query_params.forEach(function (item) {
+              err = err || check_query_params_permitted(item,permitted_fields)
+            });
+          } else {
+            for (let key in query_params) {
+              if (key == '$and' || key == '$or') {
+                return check_query_params_permitted(query_params[key],permitted_fields)
+              } else if (['$lt','$gt','_date_modified'].indexOf(key)>-1) {
+                // do nothing
+              } else if (permitted_fields.indexOf(key)<0) {
+                return (new Error("field not permitted "+key))
+              }
+            }
+          }
+        }
+        if (app_config_permission_schema.permitted_fields && app_config_permission_schema.permitted_fields.length>0 && Object.keys(req.body.query_params).length > 0) {
+          cb( check_query_params_permitted(req.body.query_params,app_config_permission_schema.permitted_fields))
+        } else {
+          cb(null)
+        }
+      }
+    }
+
+  ],
+  function (err, results) {
+    if (err) {
+      callback(err, null)
+    } else {
+      callback(null, usersWhoGrantedAppPermission, app_config_permission_schema)
+    }
+  })
+}
+
+// TO DO BASED ON OLD WRITE consile.log 2020
+exports.create_file_record = function (req, res){}
+exports.restore_record = function (req, res){
+  // THIS IS the OLD WRITE_RECORD - to be redone console.log 2020 - USE THIS FOR RESTORE AND UPDATE
+  //app.post('/ceps/write/:app_table', userDataAccessRights, app_handler.write_record);
+
+  // OLD
   // app.post('/ceps/write/:app_name/', userDataAccessRights, app_handler.cepsWriteData);
   // app.post('/ceps/write/:app_name/:collection', userDataAccessRights, app_handler.cepsWriteData);
   // app.post('/ceps/write/:app_name/:collection/:user_id', userDataAccessRights, app_handler.cepsWriteData);
 
-  //helpers.log (req,"ceps writeData at "+req.url); //+"body:"+JSON.stringify((req.body && req.body.options)? req.body.options:" none"));
   helpers.log (req,"ceps writeData at "+req.url+"body:"+JSON.stringify((req.body && req.body.options)? req.body.options:" none"));
 
   // Initialize variables
-  let data_object_id= (req.body.options && req.body.options.data_object_id)? req.body.options.data_object_id: null;
   let user_id;
-  let write = (req.body && req.body.data)? req.body.data: {};
+  let write = req.body || {};
+  let data_object_id= req.body._id? (req.body._id+"") : null;
+  delete write._id;
 
   // Items not yet included in CEPS -
   const restoreRecord = (req.body.options && req.body.options.restoreRecord);
-  if (restoreRecord && !write._owner && write._creator) write._owner = write._creator; // todo remvoe - temporary for change ion format in 2018
   const updateRecord  = (req.body.options && (req.body.options.updateRecord || req.body.options.update))
   const upsertRecord  = (req.body.options && req.body.options.upsert)
   let fileParams = {'dir':"", 'name':"", 'duplicated_file':false};
@@ -269,18 +734,18 @@ exports.write_data = function (req, res){
                   if (err) {
                       cb(err)
                   } else if (!req.session.logged_in_as_admin){
-                      cb(helpers.auth_failure("app_handler", exports.version, "write_data", req.params.app_name, "Need to be admin to restore records"));
+                      cb(helpers.auth_failure("app_handler", exports.version, "write_record", req.params.app_name, "Need to be admin to restore records"));
                   } else {
                       var u = new User(user_json);
                       if (u.check_passwordSync(req.body.options.password)) {
                           cb(null)
                       } else {
-                          cb(helpers.auth_failure("app_handler", exports.version, "write_data", req.params.app_name, "Cannot restore records or upload to accessible_objects without a password"));
+                          cb(helpers.auth_failure("app_handler", exports.version, "write_record", req.params.app_name, "Cannot restore records or upload to accessible_objects without a password"));
                       }
                   }
               })
           } else if (helpers.system_apps.indexOf(req.params.app_name)>-1 ){
-              cb(helpers.invalid_data("app name not allowed: "+req.params.app_name, "account_handler", exports.version, "write_data"));
+              cb(helpers.invalid_data("app name not allowed: "+req.params.app_name, "account_handler", exports.version, "write_record"));
           } else {
               cb(app_err("Collection name "+collection_name+"is invalid."));
           }
@@ -355,7 +820,7 @@ exports.write_data = function (req, res){
       appcollowner = {
         app_name:req.params.app_name,
         collection_name:collection_name,
-        _owner:user_id
+        owner:user_id
       }
       if (!data_object_id) {
         cb(null, null);
@@ -384,21 +849,18 @@ exports.write_data = function (req, res){
 
 
         if ((results == null || results.length == 0) && req.body.options && req.body.options.updateRecord && !restoreRecord && (!data_model || !data_model.make_data_id || !data_model.make_data_id.manual) ){
-            cb(helpers.rec_missing_error(exports.version, "write_data", req.params.app_name, "Document not found. (updateRecord with no record) for record "))
-        } else if (results && results[0] && results[0]._owner != user_id && !restoreRecord) {
-              cb(helpers.auth_failure("app_handler", exports.version, "write_data", req.params.app_name, "Cannot write to another user's record"));
+            cb(helpers.rec_missing_error(exports.version, "write_record", req.params.app_name, "Document not found. (updateRecord with no record) for record "))
         } else if ( (results == null || results.length == 0) ) { // new document
             if ((req.body.options && req.body.options.fileOverWrite) && fileParams.is_attached) flags.add('warnings','fileRecordExistsWithNoFile');
-            db_handler.db_insert(req.freezr_environment, appcollowner, data_object_id, write, {restoreRecord: restoreRecord}, cb)
+            db_handler.create(req.freezr_environment, appcollowner, data_object_id, write, {restoreRecord: restoreRecord}, cb)
         } else if (results.length == 1
-                    && (  ((updateRecord || upsertRecord) || (data_model && data_model.make_data_id && data_model.make_data_id.manual))
-                       || (fileParams.is_attached  && (req.body.options && req.body.options.fileOverWrite)) )
-                    && results[0]._owner == user_id) { // file data being updated
+                    && ( (updateRecord || upsertRecord) ||
+                         (fileParams.is_attached  && (req.body.options && req.body.options.fileOverWrite) ) )
+                  ) { // file data being updated
           let old_object = results[0]
           isAccessibleObject = (old_object._accessible_By && old_object._accessible_By.groups && old_object._accessible_By.groups.length>0); // 201909 - to review
           returned_confirm_fields._updatedRecord=true;
-          delete write._id;
-          db_handler.update_app_record (req.freezr_environment, appcollowner, data_object_id, old_object,write, cb)
+          db_handler.update (req.freezr_environment, appcollowner, data_object_id, write,{replaceAllFields:true, old_entity:old_object}, cb)
         } else if (results.length == 1) {
             cb(app_err("data object ("+data_object_id+") already exists. Set updateRecord to true in options to update a document, or fileOverWrite to true when uploading files."));
         } else {
@@ -415,17 +877,17 @@ exports.write_data = function (req, res){
         } else if (!final_object){
           cb(app_err("Did not get back a final object for object ("+data_object_id+"). Accessile object not updated. May need to reset access or try again."));
         } else {
-          const accessibles_collection = {
+          const ACCESSIBLES_APPCOLLOWNER = {
             app_name:'info_freezr_permissions',
             collection_name:"accessible_objects",
-            _owner:'freezr_admin'
+            owner:'freezr_admin'
           }
           //onsole.log(final_object._accessible_By)
           if (final_object._accessible_By.group_perms.public) { // todo? also do for non public?
               async.forEach(final_object._accessible_By.group_perms.public, function (requestorapp_permname, cb2) {
                 var acc_id = user_id+"/"+requestorapp_permname+"/"+req.params.app_name+"/"+collection_name+"/"+data_object_id;
                 //onsole.log("getting acc_id "+acc_id)
-                db_handler.db_getbyid(req.freezr_environment, accessibles_collection, acc_id, function(err, results) {
+                db_handler.db_getbyid(req.freezr_environment, ACCESSIBLES_APPCOLLOWNER, acc_id, function(err, results) {
                   if (!results) {
                       flags.add('warnings', "missing_accessible", {"_id":acc_id, "msg":"permission does not exist - may have been removed - should remove public"});
                       cb2(null);
@@ -437,7 +899,7 @@ exports.write_data = function (req, res){
                       file_handler.async_app_config(requestorApp, req.freezr_environment, function(err, requestorAppConfig){
                           if (err) {
                               console.warn("Error getting requestorAppConfig - todo - consider issuing flad rather than error")
-                              cb(helpers.state_error("app_handler.js", exports.version, "write_data", err, "Could not get requestor app config"));
+                              cb(helpers.state_error("app_handler.js", exports.version, "write_record", err, "Could not get requestor app config"));
                           } else {
                               const permission_name = requestorapp_permname.split("/")[1];
                               const permission_model= (requestorAppConfig && requestorAppConfig.permissions && requestorAppConfig.permissions[permission_name])? requestorAppConfig.permissions[permission_name]: null;
@@ -451,7 +913,7 @@ exports.write_data = function (req, res){
                                       new_data_obj = final_object;
                                   }
                                   permission_object.data_object = new_data_obj;
-                                  db_handler.replace_accessible_record (req.freezr_environment, accessibles_collection, acc_id, permission_object, cb)
+                                  db_handler.update (req.freezr_environment, ACCESSIBLES_APPCOLLOWNER, acc_id, permission_object,{replaceAllFields:true, old_entity:results[0]}, cb)
                               } else {
                                   flags.add('warnings', "app_config_error", {"_id":acc_id, "msg":"no "+(requestorAppConfig?"app_config":("permission_name or model for "+permission_name))});
                                   cb2(null);
@@ -477,190 +939,62 @@ exports.write_data = function (req, res){
     ],
     function (err) {
         if (err) {
-            helpers.send_failure(res, err, "app_handler", exports.version, "write_data");
+            helpers.send_failure(res, err, "app_handler", exports.version, "write_record");
         } else {
             //onsole.log({final_object})
             if (final_object && final_object._id) returned_confirm_fields._id = final_object._id; // new document
-            if (final_object && final_object._date_Created) returned_confirm_fields._date_Created = final_object._date_Created;
-            if (final_object && final_object._date_Modified) returned_confirm_fields._date_Modified = final_object._date_Modified;
-            if (flags && flags.warnings) console.warn("=== write_data FLAG WARNINGS === "+JSON.stringify(flags))
+            if (final_object && final_object._date_created) returned_confirm_fields._date_created = final_object._date_created;
+            if (final_object && final_object._date_modified) returned_confirm_fields._date_modified = final_object._date_modified;
+            if (flags && flags.warnings) console.warn("=== write_record FLAG WARNINGS === "+JSON.stringify(flags))
             helpers.send_success(res, {"success":true, "error":null, "confirmed_fields":returned_confirm_fields,  'duplicated_file':fileParams.duplicated_file, 'flags':flags});
         }
     });
 }
+exports.delete_record = function (req, res){
+  helpers.log (req,"ceps delete_record at "+req.url);
 
-exports.getDataObject= function(req, res) {
-  // app.get('/v1/userfile/getToken/:requestor_app/:permission_name/:user_id/:requestee_app/*', userDataAccessRights, app_handler.getFileToken); // collection_name is files
-
-  //let url = '/ceps/get/'+requestee_app+'/'collection_name+'/'+data_object_id+ "?"+(requestee_app==freezr_app_name? "":("requestor_app="+freezr_app_name)) + (permission_name? ("permission_name="+permission_name):"")
-  // app.get('/ceps/get/:requestee_app/:collection_name/:user_id/:data_object_id', userDataAccessRights, app_handler.getDataObject);
-  // app.get('/ceps/get/:requestee_app/:collection_name/:data_object_id', userDataAccessRights, app_handler.getDataObject);
-
-  //app.get('/v1/userfile/getToken/:permission_name/:requestor_app/:permission_name/:requestee_app/:user_id/*', userDataAccessRights, app_handler.getFileToken); // collection_name is files
-
-
-  //app.get('/ceps/userfile/:requestee_app/:user_id/*', userDataAccessRights, app_handler.getDataObject);
-          // "/ceps/userfile/"+requestee_app+"/"+fileId+(permission_name?("?permission_name"=permission_name):""); (and for public files, ca  have requestor_app in url query)
-
-    //app.get('/v1/db/getbyid/:permission_name/:collection_name/:requestor_app/:source_app_code/:requestee_app/:data_object_id', app_handler.getDataObject); // here request type must be "one"
-    //app.get('/v1/userfiles/:permission_name/:collection_name/:requestor_app/:source_app_code/:requestee_app/:user_id/*', app_handler.getDataObject);
-                                                                    //  '/ceps/userfile/:requestee_app/:user_id/*'
-    // "/ceps/userfile/"+requestee_app+"/"+fileId+(permission_name?("?permission_name"=permission_name):"");
-
-  console.log("getDataObject url"+req.url)
-  permission_name = req.params.permission_name || req.query.permission_name  // params in file get and query for ceps
-
-  let record_is_permitted = false,
-      the_granted_perm = null,
-      resulting_record = null,
-      own_record=false;
-  let data_object_id, parts, requestedFolder, flags;
-
-  // Initialize variables
-  let request_file = helpers.startsWith(req.path,"/v1/userfile") ;
-  if (request_file) {
-    req.params.collection_name = "files"
-    parts = req.originalUrl.split('/');
-    //data_object_id=unescape(parts.slice(7))
-    data_object_id=parts[6]+"/"+unescape(parts.slice(7))
-    if (data_object_id.indexOf('?')>-1) {
-      let parts2=data_object_id.split('?');
-      data_object_id = parts2[0]
-    }
-    //onsole.log("files url was ",req.originalUrl, "and data_object_id now is ",data_object_id)
-  } else {
-    data_object_id = req.params.data_object_id;
-  }
-
-  function app_err(message) {return helpers.app_data_error(exports.version, "getDataObject", req.params.app_name, message);}
-  function app_auth(message) {return helpers.auth_failure("app_handler", exports.version, "getDataObject", message);}
-  //onsole.log("getDataObject "+data_object_id+" from coll "+req.params.collection_name);
-
+  let user_id, write, data_object_id;
+  let requestor_app, collection_name, app_config, data_model, appcollowner, app_err, app_auth;
+  let own_collection=false
 
   async.waterfall([
-    // 1. check app code and device (get user id and requestr app)
+    // 1. check app token .. and set user_id based on record if not a param...
     function (cb) {
-      db_handler.check_app_token_and_params(req, null, function(err, user_id, requestor_app, logged_in) {
-        //onsole.log("get data object req.params.requestor_app:"+ req.params.requestor_app+"  requestor_app"+requestor_app)
-        req.params.requestor_id = user_id;
-        req.params.user_id = req.params.user_id || user_id
-        req.params.requestor_app = req.params.requestor_app || requestor_app || req.query.requestor_app
-        if (err) {
-          console.warn(err)
-          cb (app_auth("error getting device token"), "app_handler", exports.version, "getDataObject");
-        } else if (req.params.requestor_app != requestor_app || !req.params.requestor_app) {
-          cb(app_auth("requestor_app in params different from app token"), "app_handler", exports.version, "getDataObject");
-        } else if (req.query.requestor_app && req.query.requestor_app != req.params.requestor_app) {
-          cb(app_auth("requestor_app in query different from app token"), "app_handler", exports.version, "getDataObject");
-        } else if (!data_object_id){
-          cb(app_err("missing data_object_id"));
-        } else if (req.params.requestor_app == "info.freezr.admin" || req.params.requestee_app == "info.freezr.admin") {
-          // NB this should be redundant but adding it in any case
-          cb(app_auth("Should not access admin db via this interface"));
-        } else {
-          if (req.params.requestor_app==req.params.requestee_app && req.params.requestor_id == req.params.user_id){
-            own_record = true;
-            record_is_permitted = true;
-          }
-          flags = new Flags({'app_name':req.params.requestor_app});
-          cb(null)
-        }
-      })
+      db_handler.check_app_token_and_params(req, {}, cb)
     },
+    // 2. get requestor_app to initialise variables and check for completness
+    function (token_user_id, token_app_name, logged_in, cb) {
+      requestor_app = token_app_name;
+      appcollowner = new AppCollOwner(req.params.app_table, {requestor_app:requestor_app, owner:token_user_id})
+      data_object_id= req.params.data_object_id;
 
-    // 2. get item.. if own_record, go to end. if not, get all record permissions
-    function (cb) {
-      let appcollowner = {
-        app_name:req.params.requestee_app,
-        collection_name:req.params.collection_name,
-        _owner:req.params.user_id
-      }
-      db_handler.db_getbyid (req.freezr_environment, appcollowner, data_object_id, cb)
+      app_err = function (message) {return helpers.app_data_error(exports.version, "delete_record", requestor_app, message);}
+      app_auth = function (message) {return helpers.auth_failure("app_handler", exports.version, "delete_record", requestor_app+": "+message);}
+
+      file_handler.async_app_config(requestor_app, req.freezr_environment,cb);
     },
-    function (results, cb) {
-      if (!results) {
-        cb(app_err("no related records"))
-      } else {
-        resulting_record = results;
-        if (own_record) {
-          record_is_permitted = true;
-          cb(null, null)
-        } else if (!permission_name){
-          cb(app_auth("Need to specify permission name to get object "));
-        } else {
-          db_handler.granted_permissions_by_owner_and_apps (req.freezr_environment, req.params.user_id, req.params.requestor_app, req.params.requestee_app, cb)
-        }
-      }
-    },
+    // ...end above with getting app config and make sure you are allowed to delete
+    function (got_app_config, cb) {
+      app_config = got_app_config;
 
-    // 3, get permissions and check against record permissions - Note this step would be redundant if database updates properly after a premission has been revoked, but even if that was relatively assured (which it isnt as of 2019, this is provides extra reducnacy)
-    function (permissions_granted, cb) {
-        if (record_is_permitted) {
-          cb(null)
-        } else if (!permissions_granted || permissions_granted.length==0) {
-            cb(app_auth("No granted permissions exist"));
-        } else {
-          let granted_perm_names = [], have_access = false
-          permissions_granted.forEach(aPerm => {granted_perm_names.push(aPerm.permission_name)})
-
-          function check_access(record_accesses){
-            let result = null
-            record_accesses.forEach(aPerm => {
-              let [app_name, perm_name] = aPerm.split('/')
-              if (app_name == req.params.requestee_app && granted_perm_names.indexOf(permission_name)>-1) {
-                result = true;
-                the_granted_perm=aPerm;
-              }
-            })
-            return result
-          }
-
-          let loggedInAccess = (resulting_record._accessible_By && resulting_record._accessible_By.group_perms && resulting_record._accessible_By.group_perms.logged_in)? resulting_record._accessible_By.group_perms.logged_in: null;
-          if (loggedInAccess && loggedInAccess.length>0) {
-            console.warn("todo - need to make sure type of token is for logged in people so can have different types eg authed or logged_in")
-            have_access = check_access(loggedInAccess)
-          }
-          let publicAccess = (resulting_record._accessible_By && resulting_record._accessible_By.group_perms && resulting_record._accessible_By.group_perms.public)? resulting_record._accessible_By.group_perms.public : null;
-          if (!have_access && publicAccess && publicAccess.length>0) {
-              have_access = have_access || check_access(publicAccess);;
-          }
-          let userAccess = (resulting_record._accessible_By && resulting_record._accessible_By.user_perms && resulting_record._accessible_By.user_perms[req.params.requestor_id])? resulting_record._accessible_By.user_perms[req.params.requestor_id] : null;
-          if (!have_access && userAccess && userAccess.length>0) {
-            have_access = have_access || check_access(userAccess);;
-          }
-          if (!have_access) {
-            cb(app_auth("No granted permissions match"));
-          } else {
-            record_is_permitted = true;
-            cb(null)
-          }
-        }
-    },
-
-
+      // todo 2020 later to check if app allows deletes
+      data_model= (app_config && app_config.collections && app_config.collections[appcollowner.collection_name])? app_config.collections[appcollowner.collection_name]: null;
+      db_handler.delete_record(req.freezr_environment, appcollowner, data_object_id, null, cb)
+    }
     ],
-    function (err) {
-        //onsole.log("got to end of getDataObject");
-        if (!record_is_permitted || err) {
-              helpers.send_failure(res, err, "app_handler", exports.version, "getDataObject");
-        } else if (request_file){
-          if (flags.warnings) console.warn("flags:"+JSON.stringify(flags))
-          helpers.send_success(res, {'fileToken':getOrSetFileToken(req.params.user_id,req.params.requestee_app,data_object_id), 'flags':flags});
-        } else {
-          // todo - permission_model has to come from the perm
-          if (!own_record && !request_file && the_granted_perm && the_granted_perm.return_fields && the_granted_perm.return_fields.length>0) {
-              let new_record = {};
-              for (var i=0; i<the_granted_perm.return_fields.length; i++) {
-                  new_record[the_granted_perm.return_fields[i]] = resulting_record[the_granted_perm.return_fields[i]];
-              }
-              resulting_record = new_record;
-          }
-          helpers.send_success(res, {'results':resulting_record, 'flags':flags});
-        }
+    function (err, delete_confirm) {
+      //onsole.log("err",err,"delete_confirm",delete_confirm)
+      if (err) {
+        helpers.send_failure(res, err, "app_handler", exports.version, "delete_record");
+      } else if (!delete_confirm ){
+        helpers.send_failure(res, new Error("unknown write error"), "app_handler", exports.version, "delete_record");
+      } else {
+        helpers.send_success(res, {success:true});
+      }
     });
 }
 
-exports.getFileToken = exports.getDataObject
+exports.getFileToken = exports.read_record_by_id
 let FILE_TOKEN_CACHE = {}
 const FILE_TOKEN_EXPIRY = 24 * 3600 * 1000 // expiry of 24 hours
 const FILE_TOKEN_KEEP = 18 * 3600 * 1000 // time before a new token is issued so it stays valid
@@ -721,274 +1055,6 @@ exports.sendUserFile = function (req , res){
 }
 
 
-exports.db_query = function (req, res){
-    helpers.log (req,"db_query: "+req.url+" body "+JSON.stringify(req.body))
-    //onsole.log("db_query from: "+req.params.requestor_app+" - "); // +JSON.stringify(req.body)
-    // app.post('/ceps/query', userDataAccessRights, app_handler.db_query);
-    // app.post('/ceps/query/:requestor_app', userDataAccessRights, app_handler.db_query);
-
-    // options are:
-      // permission_name
-      // collection - default is to use the first in list for object_delegate
-      // app_name is the requestee app  and can be added optionally to cehck against the app_config permission (which also has it)
-      // query_params is any list of query parameters
-      // only_others excludes own records
-
-    req.app_err = function (message) {return helpers.app_data_error(exports.version, "db_query", req.params.requestor_app, message);}
-    req.app_auth_err = function (message) {return helpers.auth_failure("app_handler", exports.version, "db_query", message+" "+req.params.requestor_app);}
-
-    db_handler.check_app_token_and_params(req, {user_id:req.params.user_id}, function(err, user_id, requestor_app, logged_in) {
-      //onsole.log("get data object req.params.requestor_app:"+ req.params.requestor_app+"  requestor_app"+requestor_app)
-      req.params.user_id = req.params.user_id || user_id
-      req.params.requestor_app = req.params.requestor_app || requestor_app
-      if (err) {
-        console.warn(err)
-        helpers.send_failure(res, req.app_auth_err("error getting device token"), "app_handler", exports.version, "db_query");
-      } else if (req.params.user_id != user_id || !req.params.user_id) {
-        helpers.send_failure(res, req.app_auth_err("user id in params different from app token"), "app_handler", exports.version, "db_query");
-      } else if ((requestor_app !="info.freezr.account"  && req.params.requestor_app != requestor_app) || !req.params.requestor_app) {
-        helpers.send_failure(res, req.app_auth_err(("requestor_app in params different from app token"+req.params.requestor_app+"vs "+requestor_app+" end")), "app_handler", exports.version, "db_query");
-      } else if (req.params.requestor_app == "info.freezr.admin" || requestor_app == "info.freezr.admin" || req.body.app_name == "info.freezr.admin") {
-          // NB this should be redundant but adding it in any case
-          helpers.send_failure(res, req.app_auth_err("Should not access admin db via this interface"), "app_handler", exports.version, "db_query");
-      } else if (!req.body.permission_name) { //ie own_record
-          let usersWhoGrantedAppPermission = [{'_owner':req.params.user_id}]; // if requestor is same as requestee then user is automatically included
-          req.params.collection_name = req.body.collection_name || req.body.collection ||"main"
-          req.params.requestee_app = req.params.requestor_app
-          do_db_query(req,res, usersWhoGrantedAppPermission)
-      } else {
-          get_all_query_perms(req, res, function(req, res, usersWhoGrantedAppPermission){
-            do_db_query(req,res, usersWhoGrantedAppPermission)
-          })
-      }
-    })
-}
-
-do_db_query = function (req,res, usersWhoGrantedAppPermission) {
-  // does the db_query after basic security checks - ie who has authorised tthe request and app tokem validation
-  // all appcollowner paramatewrs must have beeb checked before do_db_query
-  //onsole.log("doing query for usersWhoGrantedAppPermission", usersWhoGrantedAppPermission)
-  const appcollowner = {
-    app_name:req.params.requestee_app,
-    collection_name:req.params.collection_name,
-    _owner:req.params.user_id
-  }
-  //onsole.log("do db query",req.body.query_params,"usersWhoGrantedAppPermission:",usersWhoGrantedAppPermission, "appcollowner",appcollowner, )
-
-  if (!req.body.query_params || Object.keys(req.body.query_params).length==0) {
-    if (usersWhoGrantedAppPermission.length==1) {
-      req.body.query_params = usersWhoGrantedAppPermission[0];
-    } else {
-      req.body.query_params = {$or:usersWhoGrantedAppPermission};
-    }
-  } else if (req.body.query_params.$and) {
-    req.body.query_params.$and = [ ...req.body.query_params.$and, ...usersWhoGrantedAppPermission]
-  } else {
-      let userQuery = usersWhoGrantedAppPermission.length==1? usersWhoGrantedAppPermission[0] : {$or: usersWhoGrantedAppPermission}
-      req.body.query_params = {'$and':[req.body.query_params, userQuery ]};
-  }
-
-  req.body.skip = req.body.skip? parseInt(req.body.skip): 0;
-  req.body.count= req.body.count? parseInt(req.body.count):(req.params.max_count? req.params.max_count: 50);
-
-  if (req.params.max_count) req.body.count = Math.min(req.body.count, req.params.max_count)
-  if (!req.body.sort && req.body.sort_field) {
-      req.body.sort = {}
-      req.body.sort[req.body.sort_field] = req.body.sort_direction? -parseInt(sort_direction):-1;
-  } else if (!req.body.sort) {
-      req.body.sort =  {'_date_Modified': -1}
-  }
-  //onsole.log("In query to find", JSON.stringify (req.body.query_params))
-  //onsole.log("In query sort is ",req.body.sort)
-  //onsole.log("In query count is ",req.body.count)
-  db_handler.db_find(req.freezr_environment, appcollowner,req.body.query_params,
-    {sort: req.body.sort, count:req.body.count, skip:req.body.skip}, function(err, results) {
-    //onsole.log("Query resuilts are ",results)
-    let returnArray = [], aReturnObject={};
-
-    if (!req.params.return_fields || !results) {
-        returnArray = results
-    } else {
-        for (var i= 0; i<results.length; i++) {
-          req.params.return_fields.push("_owner")
-          req.params.return_fields.push("_date_Modified")
-          aReturnObject = {};
-          for (j=0; j<req.params.return_fields.length;j++) {
-              aReturnObject[req.params.return_fields[j]] = results[i][req.params.return_fields[j]];
-          }
-          returnArray.push(aReturnObject);
-        }
-    }
-    if (req.internalcallfwd){
-        req.internalcallfwd(err, returnArray)
-    } else if (err) {
-        console.warn("err at end of db_query (do_db_query) "+err)
-        helpers.send_failure(res, err, "app_handler", exports.version, "do_db_query");
-    } else {
-      helpers.send_success(res, {'results':returnArray});
-    }
-  })
-}
-
-get_all_query_perms = function (req, res, callback) {
-  // reviews all query params to see who has granted permission on which app
-  let app_config, app_config_permission_schema, permission_attributes;
-  let usersWhoGrantedAppPermission=[];
-
-  async.waterfall([
-    // 1 get app config
-    function (cb) {
-      file_handler.async_app_config(req.params.requestor_app, req.freezr_environment,cb);
-    },
-    // .. and check all data needed exists
-    function (the_app_config, cb) {
-      app_config = the_app_config;
-      app_config_permission_schema = (app_config && app_config.permissions)? app_config.permissions[req.body.permission_name]: null;
-
-      if (!app_config){
-        cb(req.app_err("Missing app_config for ",req.params.requestor_app));
-      } else if (!app_config_permission_schema || !req.body.permission_name){
-        cb(req.app_err("Missing permission_schema for ",req.params.requestor_app));
-      } else {
-        if (!app_config_permission_schema.collections) app_config_permission_schema.collections = []
-        if (req.body.collection && (req.body.collection !=app_config_permission_schema.collection ||
-                                    app_config_permission_schema.collections.indexOf(req.body.collection)<0
-                                  )) {
-          cb(req.app_auth_err("collection not allowed"))
-        } else if (!req.body.collection && !app_config_permission_schema.collection && !app_config_permission_schema.collections[0]){
-          cb(req.app_auth_err("missing collection_name"));
-        } else {
-          req.params.collection_name = req.body.collection || app_config_permission_schema.collection || app_config_permission_schema.collections[0]
-
-          req.params.requestee_app = app_config_permission_schema.requestee_app || req.params.requestor_app
-
-          req.params.max_count = (app_config_permission_schema && app_config_permission_schema.max_count)? app_config_permission_schema.max_count:null;
-
-          permission_attributes = {
-              'requestor_app': req.params.requestor_app,
-              'requestee_app': req.params.requestee_app,
-              'permission_name': req.body.permission_name,
-              'granted':true
-          };
-          //onsole.log("own_record",own_record," req.params.requestor_app",req.params.requestor_app," permission_attributes.requestee_app",permission_attributes.requestee_app," req.params.permission_name",req.params.permission_name)
-
-          usersWhoGrantedAppPermission = (req.params.requestee_app == req.params.requestor_app && !req.body.only_others)? [{'_owner':req.params.user_id}]: []; // if requestor is same as requestee then user is automatically included
-          cb(null);
-        }
-      }
-    },
-
-    // 2. Get app permission
-    function (cb) {
-            db_handler.all_granted_app_permissions_by_name(req.freezr_environment, req.params.requestor_app, req.params.requestee_app, req.body.permission_name, null , cb)
-    },
-    // ... and add the people who have granted the permission to usersWhoGrantedAppPermission list
-    function (allUserPermissions, cb) {
-      if (allUserPermissions && allUserPermissions.length>0) {
-        for (var i=0; i<allUserPermissions.length; i++) {
-          if (allUserPermissions[i].sharable_groups
-              &&
-              ( allUserPermissions[i].permitter != req.params.user_id ||
-                !req.body.only_others)
-              &&
-              ((allUserPermissions[i].sharable_groups.indexOf("logged_in")>-1
-                  && req.session.logged_in_user_id) ||
-               (allUserPermissions[i].sharable_groups.indexOf("user")>-1
-                  && req.params.user_id) ||
-               (allUserPermissions[i].sharable_groups.indexOf("public")>-1)
-              // todo - if statement to be pushed in db_handler as a function... and used in other permission functions as an extra security (and everntually to allow non logged in users)
-              )
-              && allUserPermissions[i].permitter != req.params.user_id
-          ) {
-            usersWhoGrantedAppPermission.push({'_owner':allUserPermissions[i].permitter});
-          }
-        }
-      }
-      if (usersWhoGrantedAppPermission.length>0) {
-          cb(null)
-      } else {
-          cb(app_auth_err("No users have granted permissions for permission:"+req.body.permission_name));
-      }
-    },
-
-    // adds specific criteria to the query parameters
-    function (cb) {
-      let theOrs = [], err=null
-      if (app_config_permission_schema.type=="object_delegate") {
-        let perm_string = permission_attributes.requestor_app+"/"+permission_attributes.permission_name
-        if (app_config_permission_schema.sharable_groups && app_config_permission_schema.sharable_groups.length>0) {
-          if (app_config_permission_schema.sharable_groups.indexOf('public')>-1) theOrs.push({'_accessible_By.group_perms.public':perm_string})
-          if (app_config_permission_schema.sharable_groups.indexOf('logged_in')>-1 && req.session.logged_in_user_id) theOrs.push({'_accessible_By.group_perms.logged_in':perm_string})
-          if (app_config_permission_schema.sharable_groups.indexOf('user')>-1 && req.params.user_id) {
-            var a_user_obj={}
-            a_user_obj['_accessible_By.user_perms.'+req.params.user_id]=perm_string;
-            theOrs.push(a_user_obj);
-          }
-        }
-        if (theOrs.length==0) {
-            cb(app_err("permission schema has no sharables"));
-        } else {
-          if (!req.body.query_params) {
-            req.body.query_params = (theOrs.length == 1? theOrs[0] : {'$or':theOrs})
-          } else if (req.body.query_params.$and) {
-            req.body.query_params.$and.push((theOrs.length == 1? theOrs[0] : {'$or':theOrs}));
-          } else if (req.body.query_params.$or) {
-            req.body.query_params.$or= [...req.body.query_params.$or,  ...theOrs]
-          } else {
-            req.body.query_params = {'$and':[req.body.query_params, (theOrs.length == 1? theOrs[0] : {'$or':theOrs})]}
-          }
-        }
-      } else if (app_config_permission_schema.type=="db_query") {
-        let skip = req.body.skip || 0;
-        if (app_config_permission_schema.max_count && req.body.count+skip>app_config_permission_schema.max_count) {
-          req.body.count = Math.max(0,app_config_permission_schema.max_count-skip);
-        }
-        if (app_config_permission_schema.sort_fields) {
-            req.body.sort = app_config_permission_schema.sort_fields;
-        }
-
-        // permitted query_params
-        const check_query_params_permitted = function(query_params,permitted_fields){
-          let err = null;
-          if (isArray(query_params)) {
-            query_params.forEach(function (item) {
-              err = err || check_query_params_permitted(item,permitted_fields)
-            });
-          } else {
-            for (let key in query_params) {
-              if (key == '$and' || key == '$or') {
-                return check_query_params_permitted(query_params[key],permitted_fields)
-              } else if (['$lt','$gt','_date_Modified'].indexOf(key)>-1) {
-                // do nothing
-              } else if (permitted_fields.indexOf(key)<0) {
-                return (new Error("field not permitted "+key))
-              }
-            }
-          }
-        }
-        if (app_config_permission_schema.permitted_fields && app_config_permission_schema.permitted_fields.length>0 && Object.keys(req.body.query_params).length > 0) {
-          err = check_query_params_permitted(req.body.query_params,app_config_permission_schema.permitted_fields)
-        }
-      }
-      // return_fields
-      if (app_config_permission_schema.return_fields && app_config_permission_schema.return_fields.length>0) {
-        req.params.return_fields = app_config_permission_schema.return_fields
-      } else {
-        req.params.return_fields = null
-      }
-      cb(err);
-    }
-  ],
-  function (err, results) {
-    if (err) {
-      helpers.send_failure(res, err, "app_handler", exports.version, "get_all_query_perms");
-    } else {
-      do_db_query(req,res, usersWhoGrantedAppPermission)
-    }
-  })
-}
-
-
 // permission access operations
 exports.setObjectAccess = function (req, res) {
   // After app-permission has been given, this sets or updates permission to access a record
@@ -1013,17 +1079,19 @@ exports.setObjectAccess = function (req, res) {
       dbCollection,
       accessibles_object_id,
       permission_collection,
-      accessibles_collection = {
-        app_name:'info_freezr_permissions',
-        collection_name:"accessible_objects",
-        _owner:'freezr_admin'
-      },
       search_words = [],
       the_one_public_data_object = [],
       records_changed=0;
       real_object_id=null;
 
+  const ACCESSIBLES_APPCOLLOWNER = {
+          app_name:'info_freezr_permissions',
+          collection_name:"accessible_objects",
+          owner:'freezr_admin'
+        }
+
   //onsole.log("req.body",req.body)
+  console.warn("Need to change setObjectAccess to deal with ap_table rather than app and collection names")
 
   var data_object_id = req.body.data_object_id? req.body.data_object_id : null;
   var query_criteria = req.body.query_criteria? req.body.query_criteria : null;
@@ -1043,7 +1111,7 @@ exports.setObjectAccess = function (req, res) {
 
   helpers.log(req,"setObjectAccess by "+req.session.logged_in_user_id+" for "+data_object_id+" query:"+ JSON.stringify(query_criteria)+" action"+JSON.stringify(req.body.action)+" perm: " +req.params.permission_name,"collection name: ",req.body.collection);
 
-  function app_err(message) {return helpers.app_data_error(exports.version, "write_data", req.params.requestor_app + "- "+message);}
+  function app_err(message) {return helpers.app_data_error(exports.version, "write_record", req.params.requestor_app + "- "+message);}
 
   async.waterfall([
     // 0 get app config
@@ -1068,7 +1136,7 @@ exports.setObjectAccess = function (req, res) {
             cb(app_err("Missing permission"));
         } else if (!permission_type){
             cb(app_err("Missing permission type"));
-        } else if ( permission_model.sharable_groups.indexOf(new_shared_with_group) <0) {
+        } else if ( permission_model.sharable_group != new_shared_with_group) {
             cb(app_err("permission group requested is not permitted "+new_shared_with_group));
         } else if (permission_type != "object_delegate"){
             cb(app_err("permission type mismatch"));
@@ -1125,12 +1193,10 @@ exports.setObjectAccess = function (req, res) {
           appcollowner = {
             app_name:requestee_app,
             collection_name:collection_name,
-            _owner:user_id
+            owner:user_id
           }
-          if (query_criteria) query_criteria._owner = user_id;
-
-          db_handler.db_find(req.freezr_environment, appcollowner,
-            (data_object_id? {'_id':data_object_id,'_owner':user_id} : query_criteria),
+          db_handler.query(req.freezr_environment, appcollowner,
+            (data_object_id? data_object_id : query_criteria),
             {},cb)
       }
     },
@@ -1150,8 +1216,6 @@ exports.setObjectAccess = function (req, res) {
                 }
 
                 // nb this part only works ith one - to fix
-
-                if (data_object._owner != user_id) {cb2(helpers.auth_failure("app_handler", exports.version, "setObjectAccess", req.params.app_name +  "Attempt to try and set access permissions for others"));}
 
                 if (new_shared_with_group == "public") the_one_public_data_object.push(data_object);
 
@@ -1199,12 +1263,12 @@ exports.setObjectAccess = function (req, res) {
 
                 // add _pubishdate if it exists
 
-                // note purposefully hardoded so only these changes will be accepted in db_handler: _accessible_By, _publicid, _date_Published
+                // note purposefully hardoded so only these changes will be accepted in db_handler: _accessible_By, _publicid, _date_published
                 var changes = {_accessible_By:accessibles}
                 if (addToAccessibles) changes._publicid = (doGrant? accessibles_object_id: null);
-                changes._date_Published = date_Published;
+                changes._date_published = date_Published;
                 records_changed++
-                db_handler.update_object_accessibility (req.freezr_environment, appcollowner, data_object._id, data_object, changes, cb)
+                db_handler.update (req.freezr_environment, appcollowner, data_object._id, changes,{replaceAllFields:false , old_entity:data_object /*not needed by momngo but may be useful for other db's*/}, cb)
 
               },
               function (err) {
@@ -1225,7 +1289,7 @@ exports.setObjectAccess = function (req, res) {
       } else if (addToAccessibles) {
         //onsole.log("7 find "+req.session.logged_in_user_id+" for "+data_object_id+ " accessibles_object_id:"+accessibles_object_id)
 
-        db_handler.db_find(req.freezr_environment, accessibles_collection, {"data_owner":user_id,"data_object_id":data_object_id}, {}, cb)
+        db_handler.query(req.freezr_environment, ACCESSIBLES_APPCOLLOWNER, {"data_owner":user_id,"data_object_id":data_object_id}, {}, cb)
 
       } else {cb(null, null)}
     },
@@ -1244,7 +1308,7 @@ exports.setObjectAccess = function (req, res) {
                     'collection_name': collection_name,
                     'shared_with_group':[new_shared_with_group],
                     'shared_with_user':[new_shared_with_user],
-                    '_date_Published' :date_Published,
+                    '_date_published' :date_Published,
                     'data_object' : the_one_public_data_object[0], // make this async and go through al of them
                     'search_words' : search_words,
                     'granted':doGrant,
@@ -1255,18 +1319,22 @@ exports.setObjectAccess = function (req, res) {
                     app_err("cannot remove a permission that doesnt exist");
                     cb(null); // Internal error which can be ignored as non-existant permission was being removed
                 } else { // write new permission
-                    db_handler.db_insert (req.freezr_environment, accessibles_collection, null, accessibles_object, {keepReservedFields:true}, cb)
+                    db_handler.create (req.freezr_environment, ACCESSIBLES_APPCOLLOWNER, null, accessibles_object, {keepReservedFields:true}, cb)
                 }
+            } else if (results.length >1) {
+              helpers.state_error( "app_handler", exports.version, "setObjectAccess","multiple_permissions", new Error("Retrieved mkroe than one permission where there should only be one "+JSON.stringify(results)), null)
+              // todo delete other ones?
             } else  { // update existing perm
-              if (results.length >1) {helpers.state_error( "app_handler", exports.version, "setObjectAccess","multiple_permissions", new Error("Retrieved mkroe than one permission where there should only be one "+JSON.stringify(results)), null)} // todo delete other ones?
                 var write = {};
-                if (results[0].granted && results[0].data_object && results[0].data_object._owner != user_id) {
+                /* jan 2020 remvoed these - redundant? recheck
+                if (results[0].granted && results[0].data_object && results[0].data_object. owner != user_id) {
                     cb(app_err("Cannot overwrite an existing accessible object - other user"));
                 } else if (results[0].granted && results[0].requestor_app != req.params.requestor_app){
                     cb(app_err("Cannot overwrite an existing accessible object - other app"));
                 } else if (results[0].granted && results[0].data_object_id != data_object_id){
                     cb(app_err("Cannot overwrite an existing accessible object - other app"));
                 }
+                */
                 // todo - flag if regranting...
                 if (doGrant) {
                     write.granted=true;
@@ -1281,8 +1349,8 @@ exports.setObjectAccess = function (req, res) {
                     }
                     write.granted = ( (write.shared_with_group && write.shared_with_group.length>0) ) ;
                 }
-                // to review why this was repeted - replace_accessible_record now should handle just the changes. Any reason to redo all?
-                write._date_Published = date_Published;
+                // to review why this was repeted - update now should handle just the changes. Any reason to redo all?
+                write._date_published = date_Published;
                 write.data_object = the_one_public_data_object[0];
                 write.search_words = search_words;
                 write.requestee_app = requestee_app;  // in case of re-use of another object
@@ -1291,17 +1359,17 @@ exports.setObjectAccess = function (req, res) {
                 write.permission_name = req.params.permission_name;  // in case of re-use of another object
                 write.requestor_app = req.params.requestor_app; // in case of re-use of another object
                 write.collection_name = collection_name; // in case of re-use of another object
-                db_handler.replace_accessible_record (req.freezr_environment, accessibles_collection, accessibles_object_id, write, cb)
+                db_handler.update (req.freezr_environment, ACCESSIBLES_APPCOLLOWNER, accessibles_object_id, write,{replaceAllFields:true, old_entity:results[0]}, cb)
             }
         } else {cb(null, null)}
     },
 
     // 10 Add accessible id back to object
     function(results, cb) {
-        if (addToAccessibles) {
-          the_one_public_data_object[0]._publicid = doGrant? accessibles_object_id: null;
-          db_handler.update_app_record (req.freezr_environment, appcollowner, data_object_id, the_one_public_data_object[0], the_one_public_data_object[0], cb)
-        } else {cb(null, null)}
+      if (addToAccessibles) {
+        the_one_public_data_object[0]._publicid = doGrant? accessibles_object_id: null;
+        db_handler.update (req.freezr_environment, appcollowner, data_object_id, the_one_public_data_object[0],{replaceAllFields:true, old_entity:the_one_public_data_object[0]}, cb)
+      } else {cb(null, null)}
     }
   ],
   function (err, results) {
@@ -1309,7 +1377,7 @@ exports.setObjectAccess = function (req, res) {
           console.warn(err)
           helpers.send_failure(res, err, "app_handler", exports.version, "setObjectAccess");
       } else if (addToAccessibles) { // sending back data_object_id
-          helpers.send_success(res, {"data_object_id":the_one_public_data_object[0]._id, "_publicid": (doGrant? accessibles_object_id: null),'accessibles_object_id':accessibles_object_id, '_date_Published':date_Published, 'grant':doGrant,'issues':issues, 'query_criteria':query_criteria, 'records_changed':records_changed});
+          helpers.send_success(res, {"data_object_id":the_one_public_data_object[0]._id, "_publicid": (doGrant? accessibles_object_id: null),'accessibles_object_id':accessibles_object_id, '_date_published':date_Published, 'grant':doGrant,'issues':issues, 'query_criteria':query_criteria, 'records_changed':records_changed});
       } else { // sending back data_object_id
           helpers.send_success(res, {"data_object_id":data_object_id, 'grant':doGrant,'issues':issues, 'query_criteria':query_criteria, 'records_changed':records_changed});
       }
@@ -1463,11 +1531,10 @@ exports.setObjectAccess = function (req, res) {
                                 function (results, cb3) {
                                     if (!results  || results.length == 0) {
                                         var write = {};
-                                        write._owner = req.session.logged_in_user_id;
-                                        write._date_Modified = new Date().getTime();
+                                        write._date_modified = new Date().getTime();
                                         write._id = data_object_id;
                                         write._folder = req.params.folder_name? req.params.folder_name:file_handler.sep();
-                                        write._date_Created = new Date().getTime();
+                                        write._date_created = new Date().getTime();
                                         dbCollection.insert(write, { w: 1, safe: true }, cb3);
                                     } else if (results.length > 1) {
                                         cb3(helpers.app_data_error(exports.version, "updateFileList", req.params.app_name, "multiple_files_exception - Multiple Objects retrieved for "+file_name))
@@ -1513,6 +1580,38 @@ exports.setObjectAccess = function (req, res) {
     }
 
 // ancillary functions and name checks
+  const app_and_coll_names_from_app_table = function(app_table, app_name) {
+    let collection_name=null, table_app_name=null, own_collection=false;
+    if (helpers.startsWith(app_table, app_name+".")) {
+      own_collection=true;
+      table_app_name = app_name;
+      collection_name = app_table.slice(app_name.length+1)
+    } else if (helpers.startsWith(app_table, app_name) && app_table.length==app_name.length ) {
+      table_app_name = app_name;
+      own_collection=true;
+    } else {
+      table_app_name = app_table;
+    }
+    return [table_app_name, collection_name, own_collection]
+  }
+  const appcoll_from_app_table = function(app_table, requestor_app) {
+    let appcoll={
+      app_table:app_table,
+      collection_name:null,
+      own_collection:false
+    }
+    if (helpers.startsWith(app_table, requestor_app+".")) {
+      appcoll.own_collection=true;
+      appcoll.app_name = requestor_app;
+      appcoll.collection_name = app_table.slice(requestor_app.length+1)
+    } else if (helpers.startsWith(app_table, requestor_app) && app_table.length==requestor_app.length ) {
+      appcoll.app_name = requestor_app;
+      appcoll.own_collection=true;
+    } else {
+      appcoll.app_name = app_table;
+    }
+    return appcoll;
+  }
     var collectionIsValid = function (collection_name, app_config,is_file_record){
         // checkes collection name and versus app_config requirements
 
@@ -1597,7 +1696,7 @@ exports.setObjectAccess = function (req, res) {
 
 // NOT USED / EXTRA
     var make_sure_required_field_names_exist = function (params, data_model, cb) {
-        // NOTE - Currently not used... can be used if want to have records point to other records... can be put in write_data
+        // NOTE - Currently not used... can be used if want to have records point to other records... can be put in write_record
         // checks the data model to see if there are requried referecne objects and make sure the refeenced objects actually exist
         // todo - Works with ONE ref object... need to expand it to multiple
         var ref_names = [];

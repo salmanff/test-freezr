@@ -104,7 +104,7 @@ var retrieve_data = function() {
 		app_name:app_name,
 		collection:dl.collections[0].name,
 		count:retrieve_COUNT,
-		query_params: {'_date_Modified':{'$lt':dl.collections[0].last_retrieved_date}}
+		query_params: {'_date_modified':{'$lt':dl.collections[0].last_retrieved_date}}
 	}
 	freezr.db.query(queryOptions, gotData)
 }
@@ -118,9 +118,9 @@ var gotData = function(returnJson) {
 		dl.current_collection.retrieved_all = (returnJson.results.length<retrieve_COUNT);
 
 		dl.collections[0].data = dl.collections[0].data.concat(returnJson.results);
-		dl.collections[0].last_retrieved_date = dl.collections[0].data[dl.collections[0].data.length-1]._date_Modified;
+		dl.collections[0].last_retrieved_date = dl.collections[0].data[dl.collections[0].data.length-1]._date_modified;
 		addStatus("got "+returnJson.results.length+" records for a total of "+dl.collections[0].data.length)
-		var showdate = new Date(dl.collections[0].data[dl.collections[0].data.length-1]._date_Modified)
+		var showdate = new Date(dl.collections[0].data[dl.collections[0].data.length-1]._date_modified)
 
 		if (dl.current_collection.retrieved_all || JSON.stringify(dl.collections[0].data).length >FILE_SIZE_MAX) {
 			var fileName = saveData();
@@ -273,7 +273,7 @@ var transformRecord =  function(aRecord) {
 	/*
 	if (aRecord._creator){
 		delete aRecord._creator
-		aRecord._owner = freezr_user_id;
+		delete aRecord._ owner
 	}
 	*/
 	return aRecord;

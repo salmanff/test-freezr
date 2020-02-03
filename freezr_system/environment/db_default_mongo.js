@@ -97,9 +97,9 @@ exports.set_and_nulify_environment = function(old_env) {
     exports.permissions = null;
 }
 
-exports.db_insert = function (env_params, appcollowner, id, entity, options, callback) {
+exports.create = function (env_params, appcollowner, id, entity, options, callback) {
   get_coll(appcollowner.app_name, appcollowner.collection_name, (err, theCollection) =>{
-    if(err) {callback(exports.state_error ("db_default_mongo", exports.version, "db_insert", err ))
+    if(err) {callback(exports.state_error ("db_default_mongo", exports.version, "create", err ))
       } else {
         if (id) entity._id = id;
         theCollection.insert(entity, { w: 1, safe: true }, (err, results) => {
@@ -146,8 +146,8 @@ exports.db_getbyid = function (env_params, appcollowner, id, callback){
 exports.db_update = function (env_params, appcollowner, idOrQuery, updates_to_entity, options, callback) {
   // IMPORTANT: db_update cannot insert new entities - just update existign ones (TODO NOW CHECK)
     // options: replaceAllFields - replaces all object rather than specific keys
-    // In replaceAllFields: function needs to take _date_Created and _owner from previous version and add it here
-    // TODO NOW - make sure that for update, entity must exist, otherwise, need to add _date_Created and _onwer etc
+    // In replaceAllFields: function needs to take _date_created and owner from previous version and add it here
+    // TODO NOW - make sure that for update, entity must exist, otherwise, need to add _date_created and _onwer etc
 
     //onsole.log("db_update in mongo idOrQuery ",idOrQuery, "type:" ,(typeof idOrQuery),  "options",options)
 
@@ -165,8 +165,7 @@ exports.db_update = function (env_params, appcollowner, idOrQuery, updates_to_en
                    callback(null, {nModified:0, n:0}) // todo make nModified consistent
                  } else {
                    let old_entity = entities[0];
-                   updates_to_entity._date_Created = old_entity._date_Created
-                   updates_to_entity._owner = old_entity._owner
+                   updates_to_entity._date_created = old_entity._date_created
                    theCollection.update(find, updates_to_entity, {safe: true }, callback);
                  }
                })

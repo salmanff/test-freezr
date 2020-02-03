@@ -89,8 +89,8 @@ var showCollectionData = function(collection_num) {
 
 	dl.current_collection.fields = {
 		'_id':{'cellLen':40},
-		'_date_Created':{'cellLen':50, 'type':'date'},
-		'_date_Modified':{'cellLen':50, 'type':'date'},
+		'_date_created':{'cellLen':50, 'type':'date'},
+		'_date_modified':{'cellLen':50, 'type':'date'},
 	}
 
 
@@ -119,8 +119,8 @@ var showCollectionData = function(collection_num) {
 		if (dl.current_collection.fields.hasOwnProperty(key)) {
 			var newKey = key+"";
 			if (key=="_id") newKey ="id";
-			if (key=="_date_Created") newKey ="Created";
-			if (key=="_date_Modified") newKey ="Modified";
+			if (key=="_date_created") newKey ="Created";
+			if (key=="_date_modified") newKey ="Modified";
 			tempText+= "<div class='div-table-col headcell' style='width:"+  dl.current_collection.fields[key].cellLen +"px'>"+newKey+"</div>";
 			totalWidth+=dl.current_collection.fields[key].cellLen+10;
 		}

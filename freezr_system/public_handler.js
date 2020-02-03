@@ -33,20 +33,20 @@ const ALL_APPS_HMTL_CONFIG = { // html and configuration for generic public page
     },
 
     genericHTMLforRecord = function(record) {
-        const RECORDS_NOT_SHOW = ["_accessible_By","_date_Created","_date_Modified","_date_Accessibility_Mod","_date_Published","_owner", "_app_name","_permission_name","_collection_name","_id"]
+        const RECORDS_NOT_SHOW = ["_accessible_By","_date_created","_date_modified","_date_accessibility_mod","_date_published", "_app_name","_permission_name","_collection_name","_id"]
         var text = "<div class='freezr_public_genericCardOuter freezr_public_genericCardOuter_overflower'>"
         text+= '<div class="freezr_public_app_title">'+record._app_name+"</div>";
         text+= '<br><div class="freezr_public_app_title">The developer has not defined a format for this record.</div><br>';
         text += "<table>"
         for (var key in record) {
             if (Object.prototype.hasOwnProperty.call(record, key) && RECORDS_NOT_SHOW.indexOf(key)<0) {
-              // "_date_Published","_owner":"publisher", "_app_name"
+              // "_date_published","publisher", "_app_name"
               text+= "<tr style='width:100%; font-size:12px; overflow:normal'><td style='width:100px'>"+key +": </td><td>"+((typeof record[key] ==="string")? record[key] : JSON.stringify(record[key]) )+"</td></tr>"
             }
         }
         text+= "<tr style='width:100%; font-size:12px; overflow:normal'><td style='width:100px'>"+" </td><td>"+"</td></tr>"
-        text+= "<tr style='width:100%; font-size:12px; overflow:normal'><td style='width:100px'>"+"Published by" +": </td><td>"+record._owner+"</td></tr>"
-        let theDate = new Date(record._date_Published || record._date_Modified)
+        text+= "<tr style='width:100%; font-size:12px; overflow:normal'><td style='width:100px'>"+"Published by" +": </td><td>"+record.data_owner+"</td></tr>"
+        let theDate = new Date(record._date_published || record._date_modified)
         text+= "<tr style='width:100%; font-size:12px; overflow:normal'><td style='width:100px'>"+" on (date) " +": </td><td>"+theDate.toLocaleDateString()+"</td></tr>"
         text+= "<tr style='width:100%; font-size:12px; overflow:normal'><td style='width:100px'>"+" with app " +": </td><td>"+record._app_name+"</td></tr>"
 
@@ -312,17 +312,24 @@ gotoShowInitialData = function(res, freezr_environment, options) {
         if (!options.allApps) req.query.app_name = options.app_name;
         req.freezrInternalCallFwd = function(err, results) {
             // get results from query and for each record, get the file and then merge the record
-                /* from setObjectAccess for permission_record
-                    var unique_object_permission_attributes =
-                        {   'requestor_app':req.params.requestor_app,
-                            'requestee_app':requestee_app,
-                            '_owner':req.session.logged_in_user_id,
-                            'permission_name':req.params.permission_name,
-                            'collection_name': collection_name,
-                            'data_object_id': data_object_id,
-                            'shared_with_group':new_shared_with_group
-                            '_id':requestee_app+"_"+req.session.logged_in_user_id+"_"+data_object_id;
-                        } nb also adds _app_name
+                /*
+                    //  accessibles_object_id automated version is user_id+"/"+req.params.requestor_app+"/"+req.params.permission_name+"/"+requestee_app+"/"+collection_name+"/"+data_object_id;
+                    var accessibles_object = {
+                        'requestee_app':requestee_app,
+                        'data_owner':user_id,
+                        'data_object_id': data_object_id,
+                        'permission_name':req.params.permission_name,
+                        'requestor_app':req.params.requestor_app,
+                        'collection_name': collection_name,
+                        'shared_with_group':[new_shared_with_group],
+                        'shared_with_user':[new_shared_with_user],
+                        '_date_published' :date_Published,
+                        'data_object' : the_one_public_data_object[0], // make this async and go through al of them
+                        'search_words' : search_words,
+                        'granted':doGrant,
+
+                        '_id':accessibles_object_id
+                        }
                     */
             var records_stream=[];
             var renderStream = function () {
@@ -663,24 +670,24 @@ exports.dbp_query = function (req, res){
         errs = [],
         skip = (req.query && req.query.skip)? parseInt(req.query.skip): 0 ,
         count= (req.query && req.query.count)? parseInt(req.query.count): 10,
-        sort =  {'_date_Published': -1}
+        sort =  {'_date_published': -1}
 
     var permission_attributes = {
         granted: true,
         shared_with_group: 'public'
     };
-    const VALID_SEARCH_PARAMS = ["data_owner","_owner","_id","requestee_app"];
+    const VALID_SEARCH_PARAMS = ["data_owner","requestee_app"];
     VALID_SEARCH_PARAMS.forEach((aParam) => {if (req.query[aParam]) {permission_attributes[aParam] = req.query[aParam].toLowerCase()}})
 
     // note conflict if have app_name and requestee_app and req.param
     if (req.query.app_name) permission_attributes.requestee_app = req.query.app_name.toLowerCase();
     if (req.query.app) permission_attributes.requestee_app = req.query.app.toLowerCase();
-    if (req.params && req.params.app_name) permission_attributes.requestee_app = req.params.app_name.toLowerCase();
-    if (req.query.user_id && !permission_attributes._owner) permission_attributes._owner = req.query.user_id.toLowerCase();
+    if (req.params.app_name) permission_attributes.requestee_app = req.params.app_name.toLowerCase();
+    if (req.query.user_id && !permission_attributes.data_owner) permission_attributes.data_owner = req.query.user_id.toLowerCase();
     if (req.query.pid && !permission_attributes._id) permission_attributes._id = req.query.pid;
 
-    if (req.query.maxdate) permission_attributes._date_Published ={'$lt': parseInt(req.query.maxdate)}
-    if (req.query.mindate) permission_attributes._date_Published ={'$gt': parseInt(req.query.mindate)}
+    if (req.query.maxdate) permission_attributes._date_published ={'$lt': parseInt(req.query.maxdate)}
+    if (req.query.mindate) permission_attributes._date_published ={'$gt': parseInt(req.query.mindate)}
 
     if (req.query.search || req.query.q) {
         req.query.search = decodeURIComponent(((req.query.search || "") + " "+(req.query.q || "")).trim()).toLowerCase();
@@ -700,12 +707,12 @@ exports.dbp_query = function (req, res){
     async.waterfall([
         // 1 / 2. get the permission
         function (cb) {
-          const accessibles_collection = {
+          const ACCESSIBLES_APPCOLLOWNER = {
             app_name:'info_freezr_permissions',
             collection_name:"accessible_objects",
-            _owner:'freezr_admin'
+            owner:'freezr_admin'
           }
-          db_handler.db_find (req.freezr_environment, accessibles_collection, permission_attributes, {sort:sort, count:count, skip:skip}, cb)
+          db_handler.db_find (req.freezr_environment, ACCESSIBLES_APPCOLLOWNER, permission_attributes, {sort:sort, count:count, skip:skip}, cb)
         },
         // 3 see permission record and make sure it is still granted
         function (results, cb) {
@@ -730,9 +737,9 @@ exports.dbp_query = function (req, res){
                             permission_record.data_object._app_name = permission_record.requestee_app;
                             permission_record.data_object._permission_name = permission_record.permission_name;
                             permission_record.data_object._collection_name = permission_record.collection_name;
-                            permission_record.data_object._date_Modified = permission_record._date_Modified;
-                            permission_record.data_object._date_Published = permission_record._date_Published;
-                            permission_record.data_object._date_Created = permission_record._date_Created;
+                            permission_record.data_object._date_modified = permission_record._date_modified;
+                            permission_record.data_object._date_published = permission_record._date_published;
+                            permission_record.data_object._date_created = permission_record._date_created;
                             permission_record.data_object._id = permission_record._id;
                             data_records.push (permission_record.data_object)
                             //cb2(null)
@@ -754,7 +761,7 @@ exports.dbp_query = function (req, res){
         if (err) {
             helpers.send_failure(res, err, "public_handler", exports.version, "dbp_query");
         } else {
-            var sortBylastPubDate = function(obj1,obj2) { return obj2._date_Published - obj1._date_Published; }
+            var sortBylastPubDate = function(obj1,obj2) { return obj2._date_published - obj1._date_published; }
             data_records = data_records.sort(sortBylastPubDate)
             if (req.freezrInternalCallFwd) {
                 //if (errs && errs.length>0) //onsole.log("end of query with "+data_records.length+" results and errs "+JSON.stringify(errs))
@@ -793,13 +800,14 @@ exports.get_data_object= function(req, res) {
         const appcollowner = {
           app_name:req.params.requestee_app,
           collection_name:collection_name,
-          _owner:user_id
+          owner:user_id
         }
-        const accessibles_collection = {
+        const ACCESSIBLES_APPCOLLOWNER = {
           app_name:'info_freezr_permissions',
           collection_name:"accessible_objects",
-          _owner:'freezr_admin'
+          owner:'freezr_admin'
         }
+        console.warn("To review - should appcollowner be accessed or ACCESSIBLES_APPCOLLOWNER - depends on if it's a file search? if so, separate?")
         function app_err(message) {return helpers.app_data_error(exports.version, "get_data_object", req.params.requestee_app, message);}
         function app_auth(message) {return helpers.auth_failure("public_handler", exports.version, "get_data_object", message);}
 
@@ -925,23 +933,30 @@ var recheckPermissionExists = function(env_params, permission_record, freezr_env
         } else {
             //onsole.log("permission_record")
             //onsole.log(permission_record)
-            if (!permission_record.data_owner && permission_record._owner!="freezr_admin") permission_record.data_owner=permission_record._owner; // fixing legacy
+            console.log("need to revheck logic here as _ owner was changed to data_owner")
+            if (!permission_record.data_owner && permission_record.data_owner!="freezr_admin") permission_record.data_owner=permission_record.data_owner; // fixing legacy
             db_handler.permission_by_owner_and_permissionName (env_params, permission_record.data_owner, permission_record.requestor_app, permission_record.requestee_app, permission_record.permission_name, cb)
         }
     },
         /* from setObjectAccess for permission_record
-        var unique_object_permission_attributes =
-            {   'requestor_app':req.params.requestor_app,
+        if (results == null || results.length == 0) {
+            //  accessibles_object_id automated version is user_id+"/"+req.params.requestor_app+"/"+req.params.permission_name+"/"+requestee_app+"/"+collection_name+"/"+data_object_id;
+            var accessibles_object = {
                 'requestee_app':requestee_app,
-                '_owner':req.session.logged_in_user_id,
-                'permission_name':req.params.permission_name,
-                'collection_name': collection_name,
+                'data_owner':user_id,
                 'data_object_id': data_object_id,
-                'shared_with_group':new_shared_with_group
-                '_id':requestee_app+"_"+req.session.logged_in_user_id+"_"+data_object_id;
+                'permission_name':req.params.permission_name,
+                'requestor_app':req.params.requestor_app,
+                'collection_name': collection_name,
+                'shared_with_group':[new_shared_with_group],
+                'shared_with_user':[new_shared_with_user],
+                '_date_published' :date_Published,
+                'data_object' : the_one_public_data_object[0], // make this async and go through al of them
+                'search_words' : search_words,
+                'granted':doGrant,
 
-                also: data_object
-            }
+                '_id':accessibles_object_id
+                }
         */
 
     // 2.  if granted, success
@@ -995,7 +1010,7 @@ var recheckPermissionExists = function(env_params, permission_record, freezr_env
         return the_id.replace((the_user+"_"),"");
     }
     var formatFields = function(permission_record, app_config) {
-        var coreDateList = ['_date_Modified','_date_Created','_date_Published']
+        var coreDateList = ['_date_modified','_date_created','_date_published']
         coreDateList.forEach(function(name) {
             var aDate = new Date(permission_record[name])
             permission_record["_"+name] = aDate.toLocaleString();

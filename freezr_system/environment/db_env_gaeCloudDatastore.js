@@ -5,7 +5,7 @@
 
 // GAE Quirks
 // Because GAE cant do OR queries, OR queries are done MANUALLY
-// Because GAE cant sort (eg by _date_Modified) in addtiion to filtering,
+// Because GAE cant sort (eg by _date_modified) in addtiion to filtering,
 //   the owner is added to the entity kind
 
 // Todo
@@ -81,13 +81,13 @@ exports.check_db = function (env_params, callback) {
           exports.db_update (env_params, appcollowner, "test_write_id", {'foo':'updated bar'},
             {}, (err, ret)=> callback(err, env_on_db))
 		    } else {
-          exports.db_insert (env_params, appcollowner, "test_write_id", {'foo':'bar'}, null, (err, ret)=> callback(err, env_on_db))
+          exports.create (env_params, appcollowner, "test_write_id", {'foo':'bar'}, null, (err, ret)=> callback(err, env_on_db))
         }
 		});
 	})
 }
 
-exports.db_insert = function (env_params, appcollowner, id, entity, options, callback) {
+exports.create = function (env_params, appcollowner, id, entity, options, callback) {
 
   const key = getGaeKey(appcollowner, id);
   const insertable = {
@@ -220,7 +220,7 @@ exports.db_update = function (env_params, appcollowner, idOrQuery, updates_to_en
             let id = old_entity._id
             if (options.replaceAllFields) {
               updates_to_entity._owner = old_entity._owner
-              updates_to_entity._date_Created = old_entity._date_Created
+              updates_to_entity._date_created = old_entity._date_created
             } else {
               Object.keys(updates_to_entity ).forEach( key => {
                 old_entity[key] = updates_to_entity[key]

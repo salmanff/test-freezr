@@ -24,40 +24,40 @@ exports.name='nedb Datastore'
 exports.customDb = function(app_name) {return true}
 
 exports.re_init_environment_sync = function(env_params) {
-      freezr_environment = env_params;
-      running_apps_db = {}
+  freezr_environment = env_params;
+  running_apps_db = {}
 }
 exports.re_init_freezr_environment = function(env_params, callback) {
-    freezr_environment = env_params;
-    running_apps_db = {}
-    callback(null)
+  freezr_environment = env_params;
+  running_apps_db = {}
+  callback(null)
 }
 exports.check_db = function (env_params, callback) {
 		//onsole.log("check_db in nedb")
     const appcollowner = {
       app_name:'info_freezer_admin',
 		  collection_name : 'params',
-      _owner: 'freezr_admin'
+      owner: 'freezr_admin'
     }
     let env_on_db=null;
 
     const coll = get_coll(env_params, appcollowner)
 
-    exports.db_getbyid(env_params, appcollowner, "freezr_environment", function(err, env_on_db) {
-			exports.db_getbyid(env_params, appcollowner, "test_write_id", (err2, savedData) => {
+    exports.read_by_id(env_params, appcollowner, "freezr_environment", function(err, env_on_db) {
+			exports.read_by_id(env_params, appcollowner, "test_write_id", (err2, savedData) => {
 		    if (err || err2) {
 		      console.warn("got err in check_db ",(err? err : err2))
         	callback((err? err : err2), env_on_db);
 		    } else if (savedData){
-          exports.db_update (env_params, appcollowner, "test_write_id", {'foo':'updated bar'},
+          exports.update (env_params, appcollowner, "test_write_id", {'foo':'updated bar'},
             {}, (err, ret)=> callback(err, env_on_db))
 		    } else {
-          exports.db_insert (env_params, appcollowner, "test_write_id", {'foo':'bar'}, null, (err, ret)=> callback(err, env_on_db))
+          exports.create (env_params, appcollowner, "test_write_id", {'foo':'bar'}, null, (err, ret)=> callback(err, env_on_db))
         }
 		});
 	})
 }
-exports.db_insert = function (env_params, appcollowner, id, entity, options, callback) {
+exports.create = function (env_params, appcollowner, id, entity, options, callback) {
   const coll = get_coll(env_params, appcollowner)
   if (id) entity._id = id;
   coll.insert(entity, function (err, newDoc) {   // Callback is optional
@@ -70,21 +70,21 @@ exports.db_insert = function (env_params, appcollowner, id, entity, options, cal
     })
   })
 }
-exports.db_getbyid = function (env_params, appcollowner, id, cb) {
+exports.read_by_id = function (env_params, appcollowner, id, cb) {
   const coll = get_coll(env_params, appcollowner)
   coll.find({ '_id': id},  (err, results) => {
     let object=null;
     if (err) {
       // TO helpers.error
-      console.warn("error getting object for "+app_name+" collection:"+collection_name+" id:"+id+" in db_getbyid")
-      helpers.state_error("db_env_nedb", exports.version, "db_getbyid", err, "error getting object for "+appcollowner.app_name+" collection:"+appcollowner.collection_name+" id:"+id+" in db_getbyid");
+      console.warn("error getting object for "+app_name+" collection:"+collection_name+" id:"+id+" in read_by_id")
+      helpers.state_error("db_env_nedb", exports.version, "read_by_id", err, "error getting object for "+appcollowner.app_name+" collection:"+appcollowner.collection_name+" id:"+id+" in read_by_id");
     } else if (results && results.length>0 ){
       object = results[0]
     }
     cb(err, object);
   });
 }
-exports.db_find = function(env_params, appcollowner, query, options, cb) {
+exports.query = function(env_params, appcollowner, query, options, cb) {
   //onsole.log("in nedb db_find ",query, "options",options)
   const coll = get_coll(env_params, appcollowner)
   coll.find(query)
@@ -93,50 +93,64 @@ exports.db_find = function(env_params, appcollowner, query, options, cb) {
       .skip(options.skip || 0)
       .exec(cb);
 }
-exports.db_update = function (env_params, appcollowner, idOrQuery, updates_to_entity, options, cb) {
-  // IMPORTANT: db_update cannot insert new entities - just update existign ones (TODO NOW CHECK)
+exports.update = function (env_params, appcollowner, idOrQuery, updates_to_entity, options={}, cb) {
+  // assumes rights to make the update and that appcollowner is well formed
+  // IMPORTANT: db_update cannot insert new entities - just update existign ones
     // options: replaceAllFields - replaces all object rather than specific keys
-    // In replaceAllFields: function needs to take _date_Created and _owner from previous version and add it here
-    // TODO NOW - make sure that for update, entity must exist, otherwise, need to add _date_Created and _onwer etc
+    // In replaceAllFields: function needs to take _date_created from previous version and add it here
+    // if options.old_entity is specified then it is done automatically... this assumes system generates the old_entity, not the user
 
     //onsole.log("db_update in nedb idOrQuery ",idOrQuery, "options",options)
-    options = options || {};
     const coll = get_coll(env_params, appcollowner)
-    let find = (typeof idOrQuery == "string")? {_id: idOrQuery }: idOrQuery;
-    if ( options.replaceAllFields) {
-      coll.find(find)
-          .limit(1)
-          .exec((err, entities) => {
-           if (!entities || entities.length==0) {
-             cb(null, {nModified:0, n:0}) // todo make nModified consistent
-           } else {
-             let old_entity = entities[0];
-             updates_to_entity._date_Created = old_entity._date_Created
-             updates_to_entity._owner = old_entity._owner
-             coll.update(find, updates_to_entity, {safe: true }, cb);
-           }
-         })
+    const uses_record_id = (typeof idOrQuery == "string" && idOrQuery.length>0)
+    const find = uses_record_id? {_id: idOrQuery }: idOrQuery;
+
+    if (options.replaceAllFields) {
+      if (!uses_record_id) {
+        cb(new Error("cannot replaceallfields without specifying an id"))
+      } else if (options.old_entity) {
+        updates_to_entity._date_created = options.old_entity._date_created
+        coll.update(find, updates_to_entity, {safe: true }, cb);
+      } else {
+        coll.find(find)
+            .exec((err, entities) => {
+             if (!entities || entities.length==0) {
+               cb(null, {nModified:0, n:0}) // todo make nModified consistent
+             } else {
+               let old_entity = entities[0];
+               updates_to_entity._date_created = old_entity._date_created
+               coll.update(find, updates_to_entity, {safe: true }, cb);
+             }
+           })
+       }
     } else {  //if (!options.replaceAllFields)
-      coll.update(find, {$set: updates_to_entity}, { multi:options.multi }, cb);
+      delete updates_to_entity._date_created
+      coll.update(find, {$set: updates_to_entity}, { safe: true , multi:uses_record_id }, cb);
     }
 }
-exports.db_remove = function (env_params, appcollowner, idOrQuery, options={}, cb) {
-  const coll = get_coll(env_params, appcollowner)
-  if (typeof idOrQuery=="string") idOrQuery={"_id":idOrQuery}
-  coll.remove(idOrQuery, {multi:true}, cb);
-}
+
 exports.replace_record_by_id = function (env_params, appcollowner, id, updates_to_entity, cb) {
   const coll = get_coll(env_params, appcollowner)
-  coll.update({_id: id }, {$set: updates_to_entity}, {safe: true, multi:false }, (err, result) =>{
+  coll.update({_id: id }, updates_to_entity, {safe: true, multi:false }, (err, result) =>{
     if (err){
       cb(err)
     } else if (result == 1) {
+      updates_to_entity._id = id;
       cb(null, {entity:updates_to_entity})
     } else {
       cb(new Error("error updating record"))
     }
   });
 }
+
+
+exports.delete_record = function (env_params, appcollowner, idOrQuery, options={}, cb) {
+  const coll = get_coll(env_params, appcollowner)
+  if (typeof idOrQuery=="string") idOrQuery={"_id":idOrQuery}
+  coll.remove(idOrQuery, {multi:true}, cb);
+}
+
+
 
 exports.set_and_nulify_environment = function(old_env) {
     freezr_environment = old_env;
@@ -168,9 +182,10 @@ function get_coll(env_params, appcollowner) {
     return coll_meta.db
 }
 const full_name = function (appcollowner) {
-    if (!appcollowner) throw helpers.error("NEDB collection failure - need appcollowner ")
-    if (!appcollowner.app_name || !appcollowner.collection_name) throw helpers.error("NEDB collection failure - need app name and coll name for "+appcollowner.app_name+"__"+appcollowner.collection_name)
-    return (appcollowner.app_name+"__"+appcollowner.collection_name)
+  //onsole.log("full_name appcollowner ", appcollowner)
+  if (!appcollowner) throw helpers.error("NEDB collection failure - need appcollowner ")
+  if (!appcollowner.app_name || !appcollowner.owner) throw helpers.error("NEDB collection failure - need app name and an owner for "+appcollowner.owner+"__"+appcollowner.app_name+"_"+appcollowner.collection_name)
+  return (appcollowner.owner+"__"+appcollowner.app_name+(appcollowner.collection_name?("_"+appcollowner.collection_name):""))
 }
 exports.closeUnusedApps = function() {
     //onsole.log("closeUnusedApps...")

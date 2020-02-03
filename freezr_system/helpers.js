@@ -5,7 +5,7 @@ exports.version = '0.0.122';
 var async = require('async'),
     flags_obj = require("./flags_obj.js");
 
-exports.RESERVED_FIELD_LIST = ["_owner","_date_Created", "_date_Modified","_accessible_By","_publicid","_id", "_date_Published","_date_Accessibility_Mod"];
+exports.RESERVED_FIELD_LIST = ["_date_created", "_date_modified","_accessible_By","_publicid","_id", "_date_published","_date_accessibility_mod"];
 exports.USER_DIRS = ["userfiles", "userapps", "userbackups"]
 
 exports.log = function(req, message) {
@@ -16,7 +16,7 @@ exports.log = function(req, message) {
     exports.system_apps = ["info.freezr.account","info.freezr.admin","info.freezr.public","info.freezr.permissions","info.freezr.posts","info.freezr.logs"];
     exports.permitted_types = {
         groups_for_objects: ["user","logged_in","public"],
-        groups_for_fields: ["user","logged_in"],
+        //groups_for_fields: ["user","logged_in"],
         type_names: ["object_delegate", "db_query"], // used in getDataObject
     }
     var reserved_collection_names = ["field_permissions", "accessible_objects"]; // "files" s also reserved but can write to it
@@ -69,7 +69,9 @@ exports.log = function(req, message) {
       return (name.indexOf(" ") < 0 && name.indexOf("/") < 0  && name.indexOf(" ") < 0 )
     }
     exports.valid_collection_name = function(collection_name,is_file_record)  {
-        if (collection_name.indexOf("_")>-1 || collection_name.indexOf("/")>-1 || collection_name.indexOf(" ")>-1  ||collection_name.indexOf("@")>-1  || collection_name.indexOf(".")>-1 || (exports.starts_with_one_of(collection_name, ['.','-','\\',"system"] )) ) {
+        if (!collection_name) {
+          return true
+        } else if (collection_name.indexOf("_")>-1 || collection_name.indexOf("/")>-1 || collection_name.indexOf(" ")>-1  ||collection_name.indexOf("@")>-1   || (exports.starts_with_one_of(collection_name, ['.','-','\\'] )) ) {
             return false
         } else if (reserved_collection_names.indexOf(collection_name)>-1){
             return false;
@@ -213,6 +215,17 @@ exports.log = function(req, message) {
             return [anItem]
         } else if (aList.indexOf(anItem) < 0) {
             aList.push(anItem);
+        }
+        return aList
+    }
+    exports.removeFromListIfExists = function(aList,anItem) {
+        if (!anItem) {
+          return aList
+        } else if (!aList) {
+          return []
+        } else {
+          let i = aList.indexOf(anItem)
+          if (i>-1) aList.splice(i, 1);
         }
         return aList
     }
