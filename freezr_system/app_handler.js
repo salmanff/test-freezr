@@ -457,7 +457,7 @@ exports.db_query = function (req, res){
 
     req.app_auth_err = function (message) {return helpers.auth_failure("app_handler", exports.version, "db_query", message+" "+req.params.app_table);}
 
-    if (!req.body) req.body = {q:req.query} // in case of a GET statement (ie move query to body)
+    if (!req.body || helpers.isEmpty(req.body) && req.query && !helpers.isEmpty(req.query)) req.body = {q:req.query} // in case of a GET statement (ie move query to body)
 
     let permission_name = req.body.permission_name;
     let appcoll, requestor = {};
@@ -468,7 +468,6 @@ exports.db_query = function (req, res){
       requestor.app_name = token_app_name;
 
       appcoll = appcoll_from_app_table(req.params.app_table, requestor.app_name)
-      // todo - use new appcollowner
 
       // req.params.user_id is requestee
       if (err) {
