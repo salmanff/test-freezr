@@ -1,7 +1,7 @@
 // oauth_validate_page.js
 
 
-freezr.initPageScripts = function() { 
+freezr.initPageScripts = function() {
 	//onsole.log(fragments);
 	if (!fragments) {
 		showError("Error - No fragements")
@@ -12,12 +12,12 @@ freezr.initPageScripts = function() {
 	} else {
 		let options = {state: fragments.state}
 		freezer_restricted.connect.read("/v1/admin/oauth/public/validate_state", options, function(jsonString) {
-			console.log("oauth validate - return string is "+JSON.stringify(jsonString));
-	        jsonString = freezr.utils.parse(jsonString);	        
+			//onsole.log("oauth validate - return string is "+JSON.stringify(jsonString));
+	        jsonString = freezr.utils.parse(jsonString);
 	        let allurl = jsonString.sender+"#access_token="+fragments.access_token+"&source="+jsonString.source;
-	        console.log("oauth_validate_page - redirect to : "+allurl)
-	        window.open(allurl,"_self");	        
-	     });    
+	        //onsole.log("oauth_validate_page - redirect to : "+allurl)
+	        window.open(allurl,"_self");
+	     });
 	}
 }
 
@@ -42,4 +42,3 @@ var showError = function(errorText) {
   var errorBox=document.getElementById("errorBox");
   errorBox.innerHTML= errorText;
 }
-

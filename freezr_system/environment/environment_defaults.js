@@ -73,7 +73,7 @@ var autoDbParams = function(callback) {
       params:{}
     }
   }
-  // NB todo  (console.log: this replicates the db waterfall so may need to be merged / cleaned up)
+  // NB todo this replicates the db waterfall so may need to be merged / cleaned up)
 
   async.waterfall([
     // 1 MONGO_EXTERNAL check for environment variables being set at process.env for mongo

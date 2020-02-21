@@ -31,27 +31,41 @@ The following variables need to have been declared in index.html
   var freezr_server_version = freezr_server_version? freezr_server_version:"n/a";
 // db Functions - data base related functions - to read or write
 // console.log 2020 - need new functions for restoreRecord
-freezr.ceps.create = function(data, options={}, callback) {
+freezr.utils.getOpCbFrom = function(optionsAndCallback) {
+  if (!optionsAndCallback || optionsAndCallback.length==0) return [null, null]
+  const callback = optionsAndCallback[optionsAndCallback.length-1];
+  const options = optionsAndCallback.length>1? (optionsAndCallback[0] || []): []
+  if (optionsAndCallback.length>2) console.warn ("too many parameters in function",optionsAndCallback)
+  return [options, callback]
+}
+freezr.ceps.create = function(data, ...optionsAndCallback) {
   // write to the database
   // options:
     // app_table or collection (in which case the app is assumed to be freezr_app_nameapp_table )
-  if (!data_object_id) {
+    // updateRecord
+  const [options, callback] = freezr.utils.getOpCbFrom(optionsAndCallback)
+  if (!data) {
     callback({"error":"No data to write."});
+  } else if (options.updateRecord){
+    freezr.ceps.update(data, options, callback)
   } else {
     const app_table =  options.app_table || (freezr_app_name+(options.collection? ("."+options.collection):""));
     let url= "/ceps/write/"+app_table
     freezer_restricted.connect.send(url, JSON.stringify(data), callback, "POST", 'application/json');
   }
 };
-freezr.feps.create = function(data, options={}, callback) {
+freezr.feps.create = function(data, ...optionsAndCallback) {
   // non ceps options:
-    // data_object_id
+    // data_object_id (ignored if updateRecord)
     // upsert
-  if (!data_object_id) {
+  const [options, callback] = freezr.utils.getOpCbFrom(optionsAndCallback)
+  if (!data) {
     callback({"error":"No data to write."});
+  } else if (options.updateRecord){
+    freezr.feps.update(data, options, callback)
   } else {
     const app_table =  options.app_table || (freezr_app_name+(options.collection? ("."+options.collection):""));
-    let url= "/feps/create/"+app_table+(options.data_object_id? ("/"+options.data_object_id + (options.upsert? "?upsert=true":"" ) ):"" )
+    let url= "/feps/write/"+app_table+(options.data_object_id? ("/"+options.data_object_id + (options.upsert? "?upsert=true":"" ) ):"" )
     freezer_restricted.connect.send(url, JSON.stringify(data), callback, "POST", 'application/json');
   }
 };
@@ -61,21 +75,23 @@ freezr.feps.upload = function(file, options, callback ) {
   // and file specific ones: targetFolder, fileName, fileOverWrite
   // For files uploaded, collection is always "files"
 
-  var url= "/ceps/upload/"+freezr_app_name;
+  options = options || {};
+  var url= "/feps/upload/"+freezr_app_name;
   var uploadData = new FormData();
   if (file) {uploadData.append('file', file); /*onsole.log("Sending file1");*/}
-  if (options && options.data) {
+  if (options.data) {
     uploadData.append("data", JSON.stringify(data));
     delete options.data;
   }
-  if (options) uploadData.append("options", JSON.stringify(options));
+  uploadData.append("options", JSON.stringify(options));
 
   freezer_restricted.connect.send(url, uploadData, callback, "PUT", null);
 };
-freezr.ceps.getById = function(data_object_id, options={}, callback ) {
+freezr.ceps.getById = function(data_object_id, options, callback ) {
   // get a specific object by object id
   // options:
     // app_table or collection (in which case the app is assumed to be freezr_app_nameapp_table )
+  options = options || {};
   if (!data_object_id) {
     callback({"error":"No id sent."});
   } else {
@@ -98,11 +114,12 @@ freezr.feps.getById = function(data_object_id, options={}, callback ) {
     freezer_restricted.connect.read(url, null, callback);
   }
 }
-freezr.ceps.getquery = function(options={}, callback) {
+freezr.ceps.getquery = function(  ...optionsAndCallback) {
   // queries db
   // options:
-    // app_table or collection (in which case the app is assumed to be freezr_app_nameapp_table )
-    // q: list of queries eg{field:value, field, value} - can also have (_date_modified : {$lt: value})
+    // app_table or collection (in which case the app is assumed to be freezr_app_name app_table )
+    // q: list of queries eg{field:value, field, value} - can also have (_date_modified : {$lt: value}) or $gt
+  const [options, callback] = freezr.utils.getOpCbFrom(optionsAndCallback)
   const app_table =  options.app_table || (freezr_app_name+(options.collection? ("."+options.collection):""));
   let query_parts=[]
   if (options.q) {
@@ -121,22 +138,25 @@ freezr.ceps.getquery = function(options={}, callback) {
   const url = '/ceps/query/'+app_table;
   freezer_restricted.connect.read(url, options.q, callback);
 }
-freezr.feps.postquery = function(options={}, callback) {
+freezr.feps.postquery = function(...optionsAndCallback) {
   // additional feps options:
     // permission_name, user_id (which is the requestee id)
     // app_name can be added optionally to check against the app_config permission (which also has it)
     // q is any list of query parameters, sort is sort fields
     // only_others excludes own records
+
+  const [options, callback] = freezr.utils.getOpCbFrom(optionsAndCallback)
   const app_table =  options.app_table || (freezr_app_name+(options.collection? ("."+options.collection):""));
 
-  var url = '/ceps/query/'+(options.app_name || freezr_app_name)+(options.collection? ('.'+options.collection):'');
+  var url = '/feps/query/'+(options.app_name || freezr_app_name)+(options.collection? ('.'+options.collection):'');
   if (options.app_name && options.app_name == "info.freezr.admin") url='/v1/admin/dbquery/'+options.collection
   freezer_restricted.connect.send(url, JSON.stringify(options), callback, 'POST', 'application/json');
 }
-freezr.ceps.update = function(data={}, options={}, callback) {
+freezr.ceps.update = function(data={}, ...optionsAndCallback) {
   // simple record update, assuming data has a ._id object
   // options:
     // app_table or collection (in which case the app is assumed to be freezr_app_nameapp_table )
+  const [options, callback] = freezr.utils.getOpCbFrom(optionsAndCallback)
   if (!data._id) {
     callback({"error":"No _id to update."});
   } else {
@@ -145,10 +165,12 @@ freezr.ceps.update = function(data={}, options={}, callback) {
     freezer_restricted.connect.send(url, JSON.stringify(data), callback, "PUT", 'application/json');
   }
 };
-freezr.feps.update = function(data={}, options={}, callback) {
+freezr.feps.update = function(data={}, ...optionsAndCallback) {
   // additional feps options:
     // setkeys - if true then changes only the keys in the object. (works with one _id)
     // options.q is the query which is sent, for changing a number of items (acts as if it is setkeys)
+
+  const [options, callback] = freezr.utils.getOpCbFrom(optionsAndCallback)
   if (!data._id && !options.q) {
     callback({"error":"No _id to update... and no query"});
   } else if (data._id && options.q)  {
@@ -215,7 +237,6 @@ freezr.perms.setObjectAccess = function(permission_name, idOrQuery, options, cal
       { //'action': 'grant' or 'deny' // default is grant
         // can have one of:  'shared_with_group':'logged_in' or 'public' or 'shared_with_user':a user id
         // 'requestee_app': app_name (defaults to self)
-        // collection: defaults to first in list
         // pid: sets a publid id instead of the automated accessible_id
         // pubDate: sets the publish date
         // not_accessible - for public items that dont need to be lsited separately in the accessibles database
@@ -273,7 +294,7 @@ freezr.utils.getConfig = function(app_name, callback) {
 freezr.utils.ping = function(options, callback) {
   // pings freezr to get back logged in data
   // options can be password and app_name (Not functional)
-  var url = '/v1/account/ping';
+  var url = '/ceps/ping';
   freezer_restricted.connect.read(url, options, callback);
 
 }
@@ -304,7 +325,7 @@ freezr.utils.setFilePath = function(imgEl, attr, fileId, options){
   if (!fileId) return null;
   if (freezr.utils.startsWith(fileId,"/")) fileId = fileId.slice(1);
   freezr.utils.getFileToken(fileId, options, function (fileToken) {
-    imgEl[attr] =  "/v1/userfiles/"+options.requestee_app+"/"+fileId+"?fileToken="+fileToken+(options.permission_name ?("&permission_name="+options.permission_name):"");
+    imgEl[attr] =  "/feps/userfiles/"+options.requestee_app+"/"+fileId+"?fileToken="+fileToken+(options.permission_name ?("&permission_name="+options.permission_name):"");
   })
 }
 freezr.utils.getFileToken = function(fileId, options, callback){
@@ -314,12 +335,27 @@ freezr.utils.getFileToken = function(fileId, options, callback){
  options.requestee_app   =   options.requestee_app || freezr_app_name;
  options.permission_name =   options.permission_name || "self";
 
- let url = '/v1/userfileGetToken/'+freezr_app_name+'/'+ (options.permission_name || "self")+'/' + options.requestee_app+'/'+fileId
+ let url = '/feps/getuserfiletoken' +'/' +(options.permission_name || "self") +'/' +(options.requestee_app ||  freezr_app_name)+'/'+fileId
  freezer_restricted.connect.read(url, null, (resp) => {
     resp=freezr.utils.parse(resp)
     callback (resp.fileToken)
  });
 
+}
+freezr.utils.refreshFileTokens = function(eltag="IMG", attr="src", ){
+	let pictList = document.getElementsByTagName(eltag);
+	if (pictList.length>0) {
+		const host = window.location.href.slice(0,(window.location.href.slice(8).indexOf('/')+8))
+		const fepspath = '/feps/userfiles/'
+		let pict_id, app_name;
+		for (var i=0; i<pictList.length; i++) {
+			if (freezr.utils.startsWith(pictList[i][attr],host+fepspath) ) {
+				app_name = pictList[i][attr].split("/")[5]
+				pict_id = pictList[i][attr].slice((host.length+app_name.length+fepspath.length+1)).split('?')[0];
+				freezr.utils.setFilePath(pictList[i], attr, pict_id) //, {'permission_name':'picts_share'}
+			}
+		}
+	}
 }
 freezr.utils.publicPathFromId = function(fileId, requestee_app) {
   // returns the public file path based on the file id so it can be referred to in html.
@@ -441,7 +477,7 @@ freezer_restricted.permissions= {};
      		badBrowser = true;
       }
 
-      const PATHS_WO_TOKEN=['/ceps/app_token','/v1/account/ping','/v1/admin/first_registration','/v1/account/login']
+      const PATHS_WO_TOKEN=['/ceps/app_token','/ceps/ping','/v1/admin/first_registration','/v1/account/login']
       if (badBrowser) {
       	callback({"error":true, "message":"You are using a non-standard browser. Please upgrade."});
       } else if (!freezer_restricted.connect.authorizedUrl(url, method)) {
@@ -631,7 +667,7 @@ freezer_restricted.permissions= {};
         return [((height - h) / 2 / systemZoom + dualScreenTop), ((width - w) / 2 / systemZoom + dualScreenLeft)]
       }
       let [top, left] = getTopLeft(600,350)
-      window.open("/account/perms/"+parts[1]+"?window=popup&requestor_app="+parts[2]+"&permission_name="+name+"&action="+parts[3],"window","width=600, height=350, toolbar=0, menubar=0, left ="+left+", top="+top)
+      window.open("/account/perms?window=popup&requestor_app="+parts[2]+"&permission_name="+name+"&requestee_app_table="+parts[1]+"&action="+parts[3],"window","width=600, height=350, toolbar=0, menubar=0, left ="+left+", top="+top)
     }
   });
 

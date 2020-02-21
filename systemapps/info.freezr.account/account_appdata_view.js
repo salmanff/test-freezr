@@ -22,7 +22,6 @@ var dl = {  'meta': { 'user':null,
 	}
 
 freezr.initPageScripts = function() {
-	console.log("appname is "+app_name)
 	document.getElementById('app_name').innerHTML= app_name;
 	document.getElementById('freezr_user_id').innerHTML= freezr_user_id;
 	document.getElementById("toptitle").onclick = function() {window.open("/apps/"+app_name,"_self");}
@@ -39,7 +38,7 @@ freezr.initPageScripts = function() {
 			showWarning("Error connecting to server");
 		} else {
 			configReturn = freezr.utils.parse(configReturn);
-			console.log(configReturn);
+			//onsole.log(configReturn);
 			dl.meta.all_collection_names = configReturn.collection_names;
 			dl.meta.app_config = configReturn.app_config;
 			dl.meta.num_collections_retrieved = 0;

@@ -18,7 +18,7 @@ freezr.initPageScripts = function() {
                       email_address: document.getElementById("email_address").value,
                       user_id: user_id,
                       full_name: document.getElementById("full_name").value,
-                      password: password 
+                      password: password
                     };
       freezer_restricted.connect.write("/v1/admin/user_register", theInfo, gotRegisterStatus, "jsonString");
     }
@@ -27,7 +27,7 @@ freezr.initPageScripts = function() {
 
 var gotRegisterStatus = function(data) {
   if (data) data = freezr.utils.parse(data);
-  console.log("gotRegisterStatus "+JSON.stringify(data));
+  //onsole.log("gotRegisterStatus "+JSON.stringify(data));
   if (!data) {
     showError("Could not connect to server");
   } else if (data.error) {
@@ -42,5 +42,3 @@ var showError = function(errorText) {
   errorBox.innerHTML= errorText;
   window.scrollTo(0,0);
 }
-
-

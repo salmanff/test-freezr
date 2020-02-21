@@ -72,6 +72,7 @@ exports.create = function (env_params, appcollowner, id, entity, options, callba
 }
 exports.read_by_id = function (env_params, appcollowner, id, cb) {
   const coll = get_coll(env_params, appcollowner)
+  //onsole.log("in nedb read ",appcollowner," for ",id)
   coll.find({ '_id': id},  (err, results) => {
     let object=null;
     if (err) {
@@ -85,7 +86,7 @@ exports.read_by_id = function (env_params, appcollowner, id, cb) {
   });
 }
 exports.query = function(env_params, appcollowner, query, options, cb) {
-  //onsole.log("in nedb db_find ",query, "options",options)
+  //onsole.log("in nedb db_find ",query, "options",options,"appcollowner",appcollowner)
   const coll = get_coll(env_params, appcollowner)
   coll.find(query)
       .sort(options.sort || null)
@@ -143,14 +144,11 @@ exports.replace_record_by_id = function (env_params, appcollowner, id, updates_t
   });
 }
 
-
 exports.delete_record = function (env_params, appcollowner, idOrQuery, options={}, cb) {
   const coll = get_coll(env_params, appcollowner)
   if (typeof idOrQuery=="string") idOrQuery={"_id":idOrQuery}
   coll.remove(idOrQuery, {multi:true}, cb);
 }
-
-
 
 exports.set_and_nulify_environment = function(old_env) {
     freezr_environment = old_env;
@@ -170,7 +168,7 @@ exports.getAllCollectionNames = function(env_params, app_name, callback) {
 }
 
 function get_coll(env_params, appcollowner) {
-    //onsole.log("env_params in get_coll",env_params)
+    //onsole.log("get_coll in get_coll",appcollowner)
     if (running_apps_db[full_name(appcollowner)] && running_apps_db[full_name(appcollowner)].db) return running_apps_db[full_name(appcollowner)].db
     if (!running_apps_db[full_name(appcollowner)]) running_apps_db[full_name(appcollowner)]={'db':null, 'last_accessed':null};
     let coll_meta = running_apps_db[full_name(appcollowner)]
@@ -184,8 +182,10 @@ function get_coll(env_params, appcollowner) {
 const full_name = function (appcollowner) {
   //onsole.log("full_name appcollowner ", appcollowner)
   if (!appcollowner) throw helpers.error("NEDB collection failure - need appcollowner ")
-  if (!appcollowner.app_name || !appcollowner.owner) throw helpers.error("NEDB collection failure - need app name and an owner for "+appcollowner.owner+"__"+appcollowner.app_name+"_"+appcollowner.collection_name)
-  return (appcollowner.owner+"__"+appcollowner.app_name+(appcollowner.collection_name?("_"+appcollowner.collection_name):""))
+  const app_table = appcollowner.app_table || (appcollowner.app_name + (appcollowner.collection_name? ("_"+appcollowner.collection_name):"" ))
+  //onsole.log("full_name appcollowner  app_table: "+ appcollowner.app_table + " app_name :"+appcollowner.app_name+" coll: "+appcollowner.collection_name)
+  if (!app_table || !appcollowner.owner) throw helpers.error("NEDB collection failure - need app name and an owner for "+appcollowner.owner+"__"+appcollowner.app_name+"_"+appcollowner.collection_name)
+  return (appcollowner.owner+"__"+app_table)
 }
 exports.closeUnusedApps = function() {
     //onsole.log("closeUnusedApps...")

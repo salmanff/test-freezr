@@ -125,9 +125,10 @@ var dbToUse = function(env_params) {
 
 const remove_appcollowner_dots = function (appcollowner){
   new_object={}
-  new_object.app_name = appcollowner.app_name.replace(/\./g,"_")
+  if (appcollowner.app_name) new_object.app_name = appcollowner.app_name.replace(/\./g,"_")
+  if (appcollowner.app_table) new_object.app_table = appcollowner.app_table.replace(/\./g,"_")
   new_object.collection_name = appcollowner.collection_name? appcollowner.collection_name.replace(/\./g,"_"):"";
-  new_object.owner = appcollowner.owner.replace(/\./g,"_")
+  if (appcollowner.owner) new_object.owner = appcollowner.owner.replace(/\./g,"_");
   return new_object
 }
 
@@ -149,8 +150,8 @@ exports.read_by_id = function (env_params, appcollowner, id, cb) {
   appcollowner = remove_appcollowner_dots(appcollowner)
   dbToUse(env_params).read_by_id(env_params, appcollowner, id, cb);
 }
-exports.query = function(env_params, appcollowner, idOrQuery, options, callback) {
-  //onsole.log("find idOrQuery ",idOrQuery, (typeof idOrQuery))
+exports.query = function(env_params, appcollowner, idOrQuery={}, options, callback) {
+  //onsole.log("query in db_handler ", appcollowner, idOrQuery, (typeof idOrQuery))
   // options are sort, count, skip
   appcollowner = remove_appcollowner_dots(appcollowner)
   options = options || {}
@@ -166,8 +167,7 @@ exports.query = function(env_params, appcollowner, idOrQuery, options, callback)
   }
 }
 exports.update = function (env_params, appcollowner, idOrQuery, updates_to_entity,
-  options={replaceAllFields:false},
-  cb) {
+  options={replaceAllFields:false}, cb) {
   // assumes rights to make the update and that appcollowner is well formed
   // IMPORTANT: db_update cannot insert new entities - just update existign ones
     // options: replaceAllFields - replaces all object rather than specific keys
@@ -175,6 +175,7 @@ exports.update = function (env_params, appcollowner, idOrQuery, updates_to_entit
     // if old_entity is specified then it is done automatically... this assumes system generates the old_entity, not the user
 
   updates_to_entity._date_modified = new Date().getTime();
+  if (typeof idOrQuery == "string") itemId = idOrQuery+"";
   delete updates_to_entity._date_created
   delete updates_to_entity._id
   appcollowner = remove_appcollowner_dots(appcollowner)
@@ -184,7 +185,7 @@ exports.update = function (env_params, appcollowner, idOrQuery, updates_to_entit
     //} else if (ret === 0) { // todo use database specific controls here
     //  cb (null, null) //
     } else {
-      cb (null, {'date_modified':updates_to_entity._date_modified, 'nModified':ret})
+      cb (null, {'_date_modified':updates_to_entity._date_modified, "_id":itemId, 'nModified':ret})
     }
   });
 }
@@ -493,6 +494,7 @@ exports.get_app_token_record_using_pw_and_mark_used = function(env_params, sessi
       callback(helpers.error("no_results", "expected record but found none (get_app_token_record_using_pw)"))
     } else {
       let record = results[0]; // todo - theoretically there could be multiple and the right one need to be found
+      //onsole.log(record,"user_id", user_id, "app_name", app_name)
       if (record.user_id !=user_id || record.app_name != app_name) {
         callback(helpers.error("mismatch", "app_name or user_id no not match expected value (get_app_token_record_using_pw)"))
       } else if (record.date_used){
@@ -579,10 +581,11 @@ exports.update_permission_records_from_app_config = function(env_params, app_con
         // app_config exists - check it is valid
         // make a list of the schemas to re-iterate later and add blank permissions
         var app_config_permissions = (app_config && app_config.permissions && Object.keys(app_config.permissions).length > 0)? JSON.parse(JSON.stringify( app_config.permissions)) : null;
+        //onsole.log("update_permission_records_from_app_config app_config.permissions:",app_config.permissions)
         var queried_schema_list = [], schemad_permission;
         for (var permission_name in app_config_permissions) {
             if (app_config_permissions.hasOwnProperty(permission_name)) {
-                schemad_permission = exports.permission_object_from_app_config_params(app_config_permissions[permission_name], permission_name, app_name)
+                schemad_permission = exports.permission_object_from_app_config_params(app_name, app_config_permissions[permission_name], permission_name, app_name)
                 queried_schema_list.push(schemad_permission);
             }
         }
@@ -891,36 +894,38 @@ exports.get_app_info_from_db = function (env_params, app_name, callback) {
 
 // PERMISSIONS
 // create update and delete
-exports.create_query_permission_record = function (env_params, user_id, requestor_app, requestee_app_table, permission_name, permission_object, action, callback) {
-    // must be used after all inputs above are veified as well as permission_object.collection
+exports.create_query_permission_record = function (env_params, user_id, requestor_app, check_requestee_app_table, permission_name, schemad_permission, action, callback) {
+    // must be used after all inputs above are veified as well as schemad_permission.collection
     // action can be null, "Accept" or "Deny"
-    if (!user_id || !requestor_app || !requestee_app || !permission_name || !permission_object.type) {
+    if (!user_id || !requestor_app || !permission_name || !schemad_permission.type) {
         callback(helpers.missing_data("query permissions", "db_handler", exports.version,"create_query_permission_record"));
     }
     var write = {
         requestor_app: requestor_app,        // Required
-        requestee_app_table: requestee_app_table,       // Required
-        type: permission_object.type, // Required
+        requestee_app_table: check_requestee_app_table,       // Required ultimately
+        type: schemad_permission.type, // Required
         permission_name: permission_name,             // Required
-        description: permission_object.description? permission_object.description: permission_name,
+        description: schemad_permission.description? schemad_permission.description: permission_name,
         granted: false, denied:false, // One of the 2 are required
         outDated:false,
         permitter: user_id,                  // Required
         _date_created: new Date().getTime(),
         //_date_modified: new Date().getTime()
-        permitted_fields: permission_object.permitted_fields? permission_object.permitted_fields: null,
-        sharable_group : permission_object.sharable_group? permission_object.sharable_group: "self",
-        return_fields   : permission_object.return_fields? permission_object.return_fields: null,
-        anonymously     : permission_object.anonymously? permission_object.anonymously: false,
-        search_fields   : permission_object.search_fields? permission_object.search_fields: null,
-        sort_fields     : permission_object.sort_fields? permission_object.sort_fields: null, // todo later -  only 1 sort field can work at this point - to add more...
-        max_count       : permission_object.count? permission_object.count: null,
+        permitted_fields: schemad_permission.permitted_fields? schemad_permission.permitted_fields: null,
+        sharable_group : schemad_permission.sharable_group? schemad_permission.sharable_group: "self",
+        return_fields   : schemad_permission.return_fields? schemad_permission.return_fields: null,
+        anonymously     : schemad_permission.anonymously? schemad_permission.anonymously: false,
+        search_fields   : schemad_permission.search_fields? schemad_permission.search_fields: null,
+        sort_fields     : schemad_permission.sort_fields? schemad_permission.sort_fields: null, // todo later -  only 1 sort field can work at this point - to add more...
+        max_count       : schemad_permission.count? schemad_permission.count: null,
     };
 
+    if (!check_requestee_app_table) write.requestee_app_table = (schemad_permission.requestee_app || requestor_app) + (schemad_permission.collection_name? ("."+schemad_permission.collection_name) : '')
+
     if (write.type == "outside_scripts") {
-        write.script_url = permission_object.script_url? permission_object.script_url : null;
+        write.script_url = schemad_permission.script_url? schemad_permission.script_url : null;
     } else if (write.type == "web_connect") {
-        write.web_url = permission_object.web_url? permission_object.web_url : null;
+        write.web_url = schemad_permission.web_url? schemad_permission.web_url : null;
     }
 
     if (action) {
@@ -930,11 +935,15 @@ exports.create_query_permission_record = function (env_params, user_id, requesto
             write.denied = true;
         }
     }
-    exports.create (env_params, PERMISSION_APC, null, write, null, callback);
+    if (write.requestee_app_table != check_requestee_app_table && write.requestee_app_table != (schemad_permission.requestee_app || requestor_app)+(schemad_permission.collection_name? ("."+schemad_permission.collection_name) : '') ) {
+      callback("Incoinsistence requestee_app_table in create_query_permission_record ",check_requestee_app_table, requestor_app, schemad_permission.requestee_app, schemad_permission.collection_name )
+    } else {
+      exports.create (env_params, PERMISSION_APC, null, write, null, callback);
+    }
 }
 
 exports.updatePermission = function(env_params, oldPerm, action, newPerms, callback) {
-    // Note user_id, requestor_app, requestee_app, permission_name Already verified to find the right record.
+    // Note user_id, requestor_app, requestee_app_table, permission_name Already verified to find the right record.
     // action can be null, "Accept" or "Deny"
     //
     //onsole.log("updatePermission "+action)
@@ -969,7 +978,8 @@ exports.deletePermission = function (env_params, record_id, callback) {
 }
 // queries
 exports.all_userAppPermissions = function (env_params, user_id, app_name, callback) {
-    var dbQuery = {'$and': [{'permitter':user_id}, {'$or':[{'requestor_app':app_name}, {'requestee_app':app_name}]}]};
+  console.warn("app_tables need to be defined first ie fetch app tables then find all")
+    var dbQuery = {'$and': [{'permitter':user_id}, {'$or':[{'requestor_app':app_name}, {'requestee_app_table':app_name}]}]};
     exports.query(env_params, PERMISSION_APC, dbQuery, {}, callback)
 }
 exports.requestee_userAppPermissions = function (user_id, app_name, callback) {
@@ -977,59 +987,59 @@ exports.requestee_userAppPermissions = function (user_id, app_name, callback) {
 
     exports.query(env_params, PERMISSION_APC, dbQuery, {}, callback)
 }
-exports.permission_by_owner_and_permissionName = function (env_params, user_id, requestor_app, requestee_app, permission_name, callback) {
-    //onsole.log("getting perms for "+user_id+" "+requestor_app+" "+requestee_app+" "+ permission_name)
+exports.permission_by_owner_and_permissionName = function (env_params, user_id, requestor_app, requestee_app_table, permission_name, callback) {
+    //onsole.log("getting perms for "+user_id+" "+requestor_app+" "+requestee_app_table+" "+ permission_name)
     if (!user_id) {
         callback(helpers.missing_data("cannot get permission without user_id", "db_handler", exports.version,"permission_by_owner_and_permissionName"));
     } else if (!requestor_app) {
         callback(helpers.missing_data("cannot get permission without requestor_app", "db_handler", exports.version,"permission_by_owner_and_permissionName"));
-    } else if (!requestee_app) {
-        callback(helpers.missing_data("cannot get permission without requestee_app", "db_handler", exports.version,"permission_by_owner_and_permissionName"));
+    } else if (!requestee_app_table) {
+        callback(helpers.missing_data("cannot get permission without requestee_app_table", "db_handler", exports.version,"permission_by_owner_and_permissionName"));
     } else if (!permission_name) {
         callback(helpers.missing_data("cannot get permission without permission_name", "db_handler", exports.version,"permission_by_owner_and_permissionName"));
     } else {
         const dbQuery = {'$and': [{"permitter":user_id},
-                                  {'requestee_app':requestee_app},
+                                  {'requestee_app_table':requestee_app_table},
                                   {'requestor_app':requestor_app},
                                   {'permission_name':permission_name}
                         ]};
         exports.query(env_params, PERMISSION_APC, dbQuery, {}, callback)
     }
 }
-exports.granted_permissions_by_owner_and_apps = function (env_params, user_id, requestor_app, requestee_app, callback) {
-    //onsole.log("getting perms for "+user_id+" "+requestor_app+" "+requestee_app+" "+ permission_name)
+exports.granted_permissions_by_owner_and_apps = function (env_params, user_id, requestor_app, requestee_app_table, callback) {
+    //onsole.log("getting perms for "+user_id+" "+requestor_app+" "+requestee_app_table+" "+ permission_name)
     if (!user_id) {
         callback(helpers.missing_data("cannot get permission without user_id", "db_handler", exports.version,"permission_by_owner_and_permissionName"));
     } else if (!requestor_app) {
         callback(helpers.missing_data("cannot get permission without requestor_app", "db_handler", exports.version,"permission_by_owner_and_permissionName"));
-    } else if (!requestee_app) {
-        callback(helpers.missing_data("cannot get permission without requestee_app", "db_handler", exports.version,"permission_by_owner_and_permissionName"));
+    } else if (!requestee_app_table) {
+        callback(helpers.missing_data("cannot get permission without requestee_app_table", "db_handler", exports.version,"permission_by_owner_and_permissionName"));
     } else {
         const dbQuery = {'$and': [{"permitter":user_id},
-                                  {'requestee_app':requestee_app},
+                                  {'requestee_app_table':requestee_app_table},
                                   {'requestor_app':requestor_app},
                                   {"granted":true}, {$or:[{"outDated":false}, {"outDated":null}] }
                         ]};
         exports.query(env_params, PERMISSION_APC, dbQuery, {}, callback)
     }
 }
-exports.permission_by_owner_and_objectId = function (user_id, requestee_app, collection_name, data_object_id, callback) {
-    //onsole.log("getting perms for "+user_id+" "+requestor_app+" "+requestee_app+" "+ permission_name)
-    const dbQuery = {'$and': [{"permitter":user_id}, {'requestee_app':requestee_app}, {'collection_name':collection_name}, {'data_object_id':data_object_id}]};
+exports.permission_by_owner_and_objectId = function (user_id, requestee_app_table, collection_name, data_object_id, callback) {
+    //onsole.log("getting perms for "+user_id+" "+requestor_app+" "+requestee_app_table+" "+ permission_name)
+    const dbQuery = {'$and': [{"permitter":user_id}, {'requestee_app_table':requestee_app_table}, {'collection_name':collection_name}, {'data_object_id':data_object_id}]};
     exports.query(env_params, PERMISSION_APC, dbQuery, {}, callback)
 }
 exports.all_granted_app_permissions_by_name = function (env_params, requestor_app, requestee_app_table, permission_name, type, callback) {
-    var dbQuery = {'$and': [{"granted":true}, {$or:[{"outDated":false}, {"outDated":null}] } ,   {'requestee_app_table':requestee_app_table}, {'requestor_app':requestor_app}, {'permission_name':permission_name}]};
-    //var dbQuery {'$and': [{"granted":true}, {"outDated":false},  {'requestee_app':requestee_app}, {'requestor_app':requestor_app}, {'permission_name':permission_name}]};
-    if (type) dbQuery.$and.push({"type":type})
-    //onsole.log("all_granted_app_permissions_by_name ",dbQuery);
-
-    exports.query(env_params, PERMISSION_APC, dbQuery, {}, callback)
-        // todo - at callback also review each user's permission to make sure it's not outdated
+  //onsole.log("all_granted_app_permissions_by_name searching perms ",'requestee_app_table',requestee_app_table,'requestor_app',requestor_app,'permission_name',permission_name)
+  var dbQuery = {'$and': [{"granted":true}, {$or:[{"outDated":false}, {"outDated":null}] } ,   {'requestee_app_table':requestee_app_table}, {'requestor_app':requestor_app}, {'permission_name':permission_name}]};
+  //var dbQuery {'$and': [{"granted":true}, {"outDated":false},  {'requestee_app_table':requestee_app_table}, {'requestor_app':requestor_app}, {'permission_name':permission_name}]};
+  if (type) dbQuery.$and.push({"type":type})
+  //onsole.log("all_granted_app_permissions_by_name ",dbQuery);
+  exports.query(env_params, PERMISSION_APC, dbQuery, {}, callback)
+  // todo - at callback also review each user's permission to make sure it's not outdated
 }
 // Checking permission similarity
-const all_fields_to_check_for_permission_equality = ['type','requestor_app','requestee_app','collection', 'sort_fields','permission_name','sharable_group','allowed_user_ids','permitted_fields' ,'return_fields','max_count','permitted_folders'];
-var fields_for_checking_query_is_permitted = ['type','requestor_app','requestee_app','collection','sort_fields','permission_name','sharable_group','allowed_user_ids','permitted_folders'];
+const all_fields_to_check_for_permission_equality = ['type','requestee_app_table','collection', 'sort_fields','permission_name','sharable_group','allowed_user_ids','permitted_fields' ,'return_fields','max_count','permitted_folders'];
+var fields_for_checking_query_is_permitted = ['type','requestor_app','requestee_app_table','collection','sort_fields','permission_name','sharable_group','allowed_user_ids','permitted_folders'];
 // check if permitted
 var queryParamsArePermitted = function(query, permitted_fields) {
     // go through query and strip out all params an then make sure they are in permitted fields
@@ -1099,16 +1109,22 @@ exports.field_requested_is_permitted = function(permission_model,requested_field
         return false;
     }
 }
-exports.permission_object_from_app_config_params = function(app_config_params, permission_name, requestee_app_table, requestor_app) {
-    var returnpermission = app_config_params;
-    if (!app_config_params) return null;
-    //onsole.log("permission_object_from_app_config_params app_config_params "+JSON.stringify(app_config_params));
-
+exports.permission_object_from_app_config_params = function(requestor_app, app_config_perm_params, permission_name, requestee_app) {
+    var returnpermission = app_config_perm_params;
+    if (!app_config_perm_params) return null;
+    //onsole.log("permission_object_from_app_config_params app_config_perm_params - need to review todo 2020"+JSON.stringify(app_config_perm_params));
 
     returnpermission.permission_name = permission_name;
-    if (!returnpermission.requestor_app) {returnpermission.requestor_app = requestor_app? requestor_app:requestee_app;}
-    if (!returnpermission.requestee_app_table) {returnpermission.requestee_app_table = requestee_app_table;}
-    return returnpermission;
+    returnpermission.requestor_app = requestor_app
+    returnpermission.requestee_app_table =  app_config_perm_params.requestee_app_table || requestee_app
+    if (!returnpermission.requestee_app_table && requestee_app){
+      console.warn("ERROR need to define-> app_config_perm_params",app_config_perm_params)
+      console.warn("ERROR -> or define requestee_app",requestee_app)
+      throw new Error("need equestee_app_table || requestee_app to be defined ",)
+    } else {
+      returnpermission.requestee_app_table+= (app_config_perm_params.collection_name? ("."+app_config_perm_params.collection_name):"")
+      return returnpermission;
+    }
 }
 exports.permissionsAreSame = function (p1,p2) {
     //var sim = objectsAreSimilar(all_fields_to_check_for_permission_equality, p1,p2);
@@ -1274,11 +1290,12 @@ var objectsAreSimilar = function(attribute_list, object1, object2 ) {
     //onsole.log("Checking similarity for 1:"+JSON.stringify(object1)+"  "+" VERSUS:  2:"+JSON.stringify(object2));
     for (var i=0; i<attribute_list.length; i++) {
         if ((JSON.stringify(object1[attribute_list[i]]) != JSON.stringify(object2[attribute_list[i]])) && (!isEmpty(object1[attribute_list[i]]) && !isEmpty(object2[attribute_list[i]]))) {
-            // onsole.log("unequal objects found ", object1[attribute_list[i]] , " and ", object2[attribute_list[i]])
+            console.warn("unequal objects found ",attribute_list[i]," for ", object1[attribute_list[i]] , " and ", object2[attribute_list[i]])
             // todo - improve checking for lists
             foundUnequalObjects=true;
         };
     }
+    if (foundUnequalObjects) console.warn("foundUnequalObjects",object1,object2)
     return !foundUnequalObjects;
 }
 var object_attributes_are_in_list = function (attribute_list,anObject,checkObjectList) {

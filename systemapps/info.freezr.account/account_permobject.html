@@ -8,10 +8,10 @@
 		<div id="perm_list">
 			{{#perm_list}}
 				<div class="freezer_BoxTitle">{{description}} ({{permission_name}})</div>
-				<div class="freezer_butt" id="freezerperm_{{requestee_app}}_{{requestor_app}}_{{action}}_{{permission_name}}">
+				<div class="freezer_butt" id="freezerperm_{{requestee_app_table}}_{{requestor_app}}_{{action}}_{{permission_name}}">
 					{{action}}
 				</div>
-        <div class="freezer_butt_Text" id="sentence_{{requestee_app}}_{{requestor_app}}_{{permission_name}}">{{{sentence}}}
+        <div class="freezer_butt_Text" id="sentence_{{requestee_app_table}}_{{requestor_app}}_{{permission_name}}">{{{sentence}}}
         </div>
 			{{/perm_list}}
 	  </div>

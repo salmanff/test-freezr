@@ -175,36 +175,6 @@ exports.ping = function (req, res) {
     helpers.log(req, "ping.."+JSON.stringify(req.query))
     if (!req.session.logged_in_user_id) {
         helpers.send_success(res, { logged_in: false, server_type:'info.freezr', 'server_version':req.freezr_server_version });
-/* Old code
-    } else if (req.query.user_id) {
-        // also needs req.query.password, which has to be checked
-        // check use of this - needed?
-        async.waterfall([
-            // 1. get user
-            function (cb) {
-                db_handler.user_by_user_id(req.query.user_id, cb);
-            },
-
-            // 2. check the password
-            function (user_json, dummy_cb, cb) {
-                var u = new User(user_json);
-                if (u.check_passwordSync(req.query.password)) {
-                    cb(null);
-                } else {
-                    cb(helpers.auth_failure("account_handler.js",exports.version,"ping","Wrong password"));
-                }
-            },
-        ],
-        function (err) {
-            if (err) {
-                helpers.send_success(res, { logged_in: false, 'freezr_server_version':req.freezr_server_version});
-            } else if (!results || !results.app_code) {
-                helpers.send_success(res, { logged_in: true, 'login_for_app_name':req.query.login_for_app_name,  'logged_in_as_admin':req.session.logged_in_as_admin, 'user_id':req.session.logged_in_user_id, 'freezr_server_version':req.freezr_server_version, 'error':"error_getting_app_code"});
-            } else {
-                 helpers.send_success(res, { logged_in: true, 'login_for_app_name':req.query.login_for_app_name,  'logged_in_as_admin':req.session.logged_in_as_admin, 'user_id':req.session.logged_in_user_id, 'freezr_server_version':req.freezr_server_version, 'source_app_code':results.app_code});
-            }
-        });
-        */
     } else {
         helpers.send_success(res, { logged_in: true, 'logged_in_as_admin':req.session.logged_in_as_admin, 'user_id':req.session.logged_in_user_id, server_type:'info.freezr', 'server_version':req.freezr_server_version});
     }
@@ -737,10 +707,11 @@ exports.appMgmtActions  = function (req,res) /* deleteApp updateApp */ {
   var action = (req.body && req.body.action)? req.body.action: null;
   var app_name = (req.body && req.body.app_name)? req.body.app_name: null;
   var logged_in_user = req.session.logged_in_user_id;
-  var app_version=null;
+  var app_version=null, requestor_app;
 
   let checks = {user_id: req.session.user_id, logged_in:true, requestor_app:"info.freezr.account"}
-  db_handler.check_app_token_and_params(req, checks, function(err, user_id, requestor_app, logged_in) {
+  db_handler.check_app_token_and_params(req, checks, function(err, user_id, token_requestor_app, logged_in) {
+    requestor_app = token_requestor_app
     if (err) {
       helpers.send_auth_failure(res, "account_handler", exports.version,"appMgmtActions","failure to valkdate auth token "+err.message);
     } else if (action == 'removeApp') {
@@ -808,7 +779,7 @@ exports.appMgmtActions  = function (req,res) /* deleteApp updateApp */ {
           if (!app_display_name) app_display_name = app_name;
 
           if (app_config) {
-            db_handler.update_permission_records_from_app_config(req.freezr_environment, app_config, app_name, req.session.logged_in_user_id, flags, cb);
+            db_handler.update_permission_records_from_app_config(req.freezr_environment, app_config, requestor_app, req.session.logged_in_user_id, flags, cb);
           } else {
             cb(null, null)
           }
@@ -877,7 +848,7 @@ exports.changeNamedPermissions = function(req, res) {
   //app.put ('/v1/permissions/change/:requestee_app/:source_app_code', userDataAccessRights, account_handler.changePermissions);
   helpers.log (req,"changePermissions "+JSON.stringify(req.body));
 
-  if (req.body.changeList && req.body.changeList.length==1 && req.body.changeList[0].permission_name && req.body.changeList[0].action && req.body.changeList[0].requestee_app && req.body.changeList[0].requestor_app) {
+  if (req.body.changeList && req.body.changeList.length==1 && req.body.changeList[0].permission_name && req.body.changeList[0].action && req.body.changeList[0].requestee_app_table && req.body.changeList[0].requestor_app) {
     let permission_name = req.body.changeList[0].permission_name;
     let action = req.body.changeList[0].action;
     let requestee_app_table = req.body.changeList[0].requestee_app_table;
@@ -895,8 +866,7 @@ exports.changeNamedPermissions = function(req, res) {
           app_config = the_app_config;
 
           app_config_permissions = (app_config && app_config.permissions && Object.keys(app_config.permissions).length > 0)? JSON.parse(JSON.stringify( app_config.permissions)) : null;
-          schemad_permission = db_handler.permission_object_from_app_config_params(app_config_permissions[permission_name], permission_name, requestee_app_table, requestor_app);
-          //onsole.log("Schemad permission is "+JSON.stringify(schemad_permission))
+          schemad_permission = db_handler.permission_object_from_app_config_params(requestor_app, app_config_permissions[permission_name], permission_name, requestor_app);
 
           if (!schemad_permission) {
             cb(helpers.missing_data("No permission schema exists"));
@@ -910,10 +880,11 @@ exports.changeNamedPermissions = function(req, res) {
             cb(helpers.invalid_data("One and only one sharable_group can be permissioned now - crrect app config for "+requestor_app+".","account_handler", exports.version, "changeNamedPermissions"));
           } else if (schemad_permission.sharable_group=="public" && !helpers.startsWith( schemad_permission.requestee_app_table,schemad_permission.requestor_app)) {
             cb(helpers.invalid_data("you can only make data public via its own app","account_handler", exports.version, "changeNamedPermissions"));
-          } else if (permission_name && action && requestor_app && requestee_app_table &&  schemad_permission && (schemad_permission.collection || schemad_permission.collections  || (schemad_permission.type == "outside_scripts" && schemad_permission.script_url && helpers.startsWith(schemad_permission.script_url,"http") )  ) ) {
+          } else if (permission_name && action && requestor_app && requestee_app_table &&  schemad_permission && (schemad_permission.requestee_app_table || (schemad_permission.type == "outside_scripts" && schemad_permission.script_url && helpers.startsWith(schemad_permission.script_url,"http") )  ) ) {
             cb(null)
           } else {
-            console.warn(permission_name ,action , requestor_app , requestee_app_table)
+            console.warn(schemad_permission, permission_name ,action , requestor_app , requestee_app_table)
+            console.warn("schemad_permission", pschemad_permission)
             cb(helpers.missing_data("permission related data"));
           }
         },
@@ -1110,21 +1081,21 @@ exports.all_app_permissions = function(req, res) {
     // todo - generalise so we get all permissions. and also otherapp permissions
     // todo Need to check requested permissions in app config against granted permissions
     // check by name and also make sure that it has not changed...
-    //onsole.log("all_app_permissions")
+    //onsole.log("all_app_permissions for app "+req.params.app_name)
 
-    var requestee_app = req.params.requestee_app;
+    var app_name = req.params.app_name;
     var returnPermissions = [], user_permissions_to_add=[], user_permissions_to_delete=[], user_permissions_changed=[];
-    var app_config, user_id;
+    var app_config, user_id, requestor_app;
 
         async.waterfall([
           // 0. check app token
           function (cb) {
-            let checks = {requestor_app:[requestee_app, "info.freezr.account"]}
+            let checks = {requestor_app:[app_name, "info.freezr.account"]}
             db_handler.check_app_token_and_params(req, checks, cb)
           },
 
           // get app config
-          function (token_user_id, requestor_app, logged_in, cb) {
+          function (token_user_id, token_requestor_app, logged_in, cb) {
             user_id = token_user_id;
             if (logged_in && user_id != req.session.logged_in_user_id) {
                 cb(helpers.error("logged_in user id does not match toklen record"))
@@ -1135,12 +1106,13 @@ exports.all_app_permissions = function(req, res) {
 
             // get app config
             function (cb) {
-                file_handler.async_app_config(requestee_app, req.freezr_environment,cb);
+              //onsole.log("Todo 2020 - need to find app_configs for all requestor apps")
+                file_handler.async_app_config(app_name, req.freezr_environment,cb);
             },
             // get all_userAppPermissions -
             function (the_app_config, cb) {
                 app_config = the_app_config;
-                db_handler.all_userAppPermissions(req.freezr_environment, user_id, requestee_app, cb);
+                db_handler.all_userAppPermissions(req.freezr_environment, user_id, app_name, cb);
             },
 
 
@@ -1148,6 +1120,7 @@ exports.all_app_permissions = function(req, res) {
                 // mini-hack for development only - in case app hasnt been registered or is updated offline, go to the app config to get the needs and check that they are all there and aer uptodate
                 // Can remove this for non-developers
                 //
+                //onsole.log("all_userAppPermissions",all_userAppPermissions)
                 var app_config_permissions = (app_config && app_config.permissions && Object.keys(app_config.permissions).length > 0)? JSON.parse(JSON.stringify( app_config.permissions)) : null;
                 var permission_name="", schemad_permission;
 
@@ -1157,12 +1130,12 @@ exports.all_app_permissions = function(req, res) {
 
                     permission_name = all_userAppPermissions[i].permission_name;
 
-                    if (aPermission.requestor_app !=requestee_app) {
+                    if (aPermission.requestor_app !=app_name) {
                         // Other apps have requested permission - just add them
                         // Need to check changes here and granted status
                         returnPermissions.push(aPermission);
                     } else if (app_config_permissions && app_config_permissions[permission_name]) {
-                        schemad_permission = db_handler.permission_object_from_app_config_params(app_config_permissions[permission_name], permission_name, requestee_app)
+                        schemad_permission = db_handler.permission_object_from_app_config_params(app_name, app_config_permissions[permission_name], permission_name, app_name)
                         if (db_handler.permissionsAreSame(aPermission,schemad_permission)) {
                             returnPermissions.push(aPermission);
                         // todo - if not the same then should at least update the old stored permission so itis in the future? to review
@@ -1191,7 +1164,7 @@ exports.all_app_permissions = function(req, res) {
                     var newPermission={};
                     for (var key in app_config_permissions) {
                         if (app_config_permissions.hasOwnProperty(key)) {
-                            newPermission = db_handler.permission_object_from_app_config_params(app_config_permissions[key], key, requestee_app);
+                            newPermission = db_handler.permission_object_from_app_config_params(app_name, app_config_permissions[key], key, app_name);
                             returnPermissions.push(newPermission);
                             user_permissions_to_add.push(newPermission);
                         }
@@ -1208,13 +1181,13 @@ exports.all_app_permissions = function(req, res) {
             if (err) {
                 helpers.send_failure(res, err,"account_handler", exports.version,"all_app_permissions");
             } else {
-              let app_display_name = (app_config && app_config.meta && app_config.meta.app_display_name)? app_config.meta.app_display_name : requestee_app;
+              let app_display_name = (app_config && app_config.meta && app_config.meta.app_display_name)? app_config.meta.app_display_name : app_name;
               let ret = {}
-              ret[requestee_app]= groupPermissions(returnPermissions, requestee_app)
-              ret[requestee_app].app_name = requestee_app
-              ret[requestee_app].app_display_name = app_display_name
+              ret[app_name]= groupPermissions(returnPermissions, app_name)
+              ret[app_name].app_name = app_name
+              ret[app_name].app_display_name = app_display_name
 
-              if (req.freezrIntermediateCallFwd) { /* ie coming from kinternal request for perm*/
+              if (req.freezrIntermediateCallFwd) { /* ie coming from internal request for perm*/
                     req.freezrIntermediateCallFwd(null, ret)
               } else if (req.freezrInternalCallFwd) { /* ie coming from kinternal request for perm*/
                     req.freezrInternalCallFwd(null, ret)
@@ -1244,11 +1217,11 @@ function groupPermissions(returnPermissions, freezr_app_name) {
       aPerm = returnPermissions[i];
       if (aPerm.type == "outside_scripts") {
         groupedPermissions.outside_scripts.push(aPerm);
-      } else if (["object_delegate","db_query"].indexOf(aPerm.type)>-1 && aPerm.requestor_app == freezr_app_name && aPerm.requestee_app == freezr_app_name) {
+      } else if (["object_delegate","db_query"].indexOf(aPerm.type)>-1 && aPerm.requestor_app == freezr_app_name && helpers.startsWith(aPerm.requestee_app_table,freezr_app_name) ) {
         groupedPermissions.thisAppToThisApp.push(aPerm);
-      } else if (["object_delegate","db_query"].indexOf(aPerm.type)>-1  && aPerm.requestor_app != freezr_app_name && aPerm.requestee_app == freezr_app_name) {
+      } else if (["object_delegate","db_query"].indexOf(aPerm.type)>-1  && aPerm.requestor_app != freezr_app_name && helpers.startsWith(aPerm.requestee_app_table,freezr_app_name) ) {
         groupedPermissions.otherAppsToThisApp.push(aPerm);
-      } else if (["object_delegate","db_query"].indexOf(aPerm.type)>-1  && aPerm.requestor_app == freezr_app_name && aPerm.requestee_app != freezr_app_name) {
+      } else if (["object_delegate","db_query"].indexOf(aPerm.type)>-1  && aPerm.requestor_app == freezr_app_name && !helpers.startsWith(aPerm.requestee_app_table,freezr_app_name) ) {
         groupedPermissions.thisAppToOtherApps.push(aPerm);
       } else {
         groupedPermissions.unknowns.push(aPerm)
@@ -1260,8 +1233,14 @@ function groupPermissions(returnPermissions, freezr_app_name) {
   }
 }
 exports.generatePermissionHTML = function (req, res) {
+  //onsole.log("generatePermissionHTML "+req.url)
+  //onsole.log("req.params",req.params,"req.query",req.query)
+  if (!req.params.app_name) { // ie parameters are under query
+    req.params.app_name = req.query.requestor_app
+    //req.params.requestee_app = req.query.requestor_app
+  }
   req.freezrIntermediateCallFwd = function(err, results) {
-    //onsole.log("freezrIntermediateCallFwd results ",results)
+    //onsole.log("freezrIntermediateCallFwd results ",JSON.stringify(results) )
     var Mustache = require('mustache');
     // todo add option to wrap pcard in html header
     file_handler.get_file_content("info.freezr.account", "account_permobject.html" , req.freezr_environment, function(err, html_for_perm_group) {
@@ -1270,7 +1249,6 @@ exports.generatePermissionHTML = function (req, res) {
       } else {
         let html_content = "";
         Object.keys(results).forEach(function(app_name, i) {
-          //onsole.log("dealing with ",app_name)
           let app_obj = results[app_name]
           html_content += '<table class="app_container" width="100%"><tbody><tr><td width="40px"><br><br><img src="/app_files/'+app_name+'/static/logo.png" width="40px" class="logo_img"></td>'
           html_content += '<td><div class="freezer_dialogue_topTitle">'+app_obj.app_display_name+'</div><span class="small_text">'+app_name+'</span><br></td></tr></tbody></table>'
@@ -1287,7 +1265,8 @@ exports.generatePermissionHTML = function (req, res) {
           const add_perm_sentence = function(aPerm) {
             let sentence ="";
             let hasBeenAccepted = (aPerm.granted && !aPerm.outDated)
-            let other_app = aPerm.requestee_app != aPerm.requestor_app;
+            let other_app = !helpers.startsWith(aPerm.requestee_app_table, aPerm.requestor_app) ;
+
             let access_word = other_app? "access and share":"share";
             sentence+= other_app? ("The app, <b style='color:purple;'>"+aPerm.requestor_app+"</b>,") : "This app"
             sentence += hasBeenAccepted? " is able to ":" wants to be able to "
@@ -1316,7 +1295,7 @@ exports.generatePermissionHTML = function (req, res) {
                 //to_render.perm_list =
                 perm_count++
                 to_render.perm_list.map(add_perm_sentence)
-                //onsole.log("to_render for key: ",perm_type," for to_render.perm_list: ",to_render.perm_list)
+                //onsole.log("permobject - to_render for key: ",perm_type," for to_render.perm_list: ",to_render.perm_list)
                 html_content += Mustache.render(html_for_perm_group, to_render);
               }
             }

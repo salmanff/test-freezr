@@ -242,7 +242,7 @@ var showInstructions = function(freezrStatus) {
   document.getElementById("close_instructions_01").style.display="none";
 }
 var populateErrorMessage = function (freezrServerStatus, initial){
-  console.log("freezrServerStatus",freezrServerStatus)
+  //onsole.log("freezrServerStatus",freezrServerStatus)
   var inner = "";
   if (!freezrServerStatus.fundamentals_okay) {
     var inner = "<b>There was a serious issue with your freezr server environement.<br/>";

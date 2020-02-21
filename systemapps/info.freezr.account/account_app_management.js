@@ -100,7 +100,7 @@ var buttons = {
         if (file.size > 500000) document.getElementById("freezer_dialogueInnerText").innerHTML = "<br/>You are uploading a large file. This might take a little while. Please be patient.<br/>"+document.getElementById("freezer_dialogueInnerText").innerHTML
         freezer_restricted.connect.send(url, uploadData, function(returndata) {
             var d = freezr.utils.parse(returndata);
-            console.log("Upload file returned ",d)
+            //onsole.log("Upload file returned ",d)
             if (d.err) {
               writeErrorsToFreezrDialogue(d)
             } else{
@@ -125,7 +125,7 @@ var buttons = {
       app_url = normliseGithubUrl(app_url)
       freezer_restricted.menu.resetDialogueBox(true);
       freezer_restricted.connect.ask('/v1/account/app_install_from_url.json', {'app_url':app_url,'app_name':app_name }, function(returndata) {
-          console.log(returndata)
+          //onsole.log(returndata)
           var d = freezr.utils.parse(returndata);
           if (d.err) {
             writeErrorsToFreezrDialogue(d)
@@ -144,7 +144,7 @@ var buttons = {
     } else {
       freezer_restricted.menu.resetDialogueBox(true);
       freezer_restricted.connect.ask('/v1/account/app_install_blank', {'app_name':app_name }, function(returndata) {
-          console.log(returndata)
+          //onsole.log(returndata)
           var d = freezr.utils.parse(returndata);
           d.isBlankOfflineApp = true
           if (d.err) {
@@ -203,11 +203,11 @@ var buttons = {
     let options = {app_name, expiry, one_device}
 
     let url = '/v1/account/apppassword/generate';
-    console.log("sending genAppPassword options",options)
+    //onsole.log("sending genAppPassword options",options)
 
     freezer_restricted.connect.read(url, options , (resp) => {
       resp=freezr.utils.parse(resp)
-      console.log(resp)
+      //onsole.log(resp)
       document.getElementById("spinner").style.display="none";
       var copyText = document.getElementById("appPasswordForApp");
       copyText.innerHTML = resp.app_password
@@ -229,10 +229,10 @@ var buttons = {
     let options = {app_name, expiry, one_device, password}
     let url = '/v1/account/apppassword/updateparams';
 
-    console.log("sending savePermsChanges options",options)
+    //onsole.log("sending savePermsChanges options",options)
     freezer_restricted.connect.read(url, options , (resp) => {
       resp=freezr.utils.parse(resp)
-      console.log(resp)
+      //onsole.log(resp)
       document.getElementById("button_savePermsChanges").style.display="none";
       document.getElementById("perm_warning").style.display="block";
       document.getElementById("perm_warning").innerHTML = (resp.success? "Changes were saved successfully": "There was an error saving your changes. Try again later");
@@ -324,7 +324,6 @@ var ShowAppUploadErrors = function (theData, type, callFwd) {
 }
 
 var uploadSuccess = function() {
-  console.log("uploadSuccess")
   buttons.updateAppList();
   //document.getElementById("freezer_dialogue_extra_title").innerHTML="Finalize Installation and Launch'."
   //document.getElementById("freezer_dialogue_extra_title").onclick=function() {buttons.goto}

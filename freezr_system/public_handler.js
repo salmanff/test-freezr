@@ -33,7 +33,7 @@ const ALL_APPS_HMTL_CONFIG = { // html and configuration for generic public page
     },
 
     genericHTMLforRecord = function(record) {
-        const RECORDS_NOT_SHOW = ["_accessible_By","_date_created","_date_modified","_date_accessibility_mod","_date_published", "_app_name","_permission_name","_collection_name","_id"]
+        const RECORDS_NOT_SHOW = ["_accessible_By","_date_created","_date_modified","_date_accessibility_mod","_date_published", "_app_name","_data_owner","_permission_name","_collection_name","_id"]
         var text = "<div class='freezr_public_genericCardOuter freezr_public_genericCardOuter_overflower'>"
         text+= '<div class="freezr_public_app_title">'+record._app_name+"</div>";
         text+= '<br><div class="freezr_public_app_title">The developer has not defined a format for this record.</div><br>';
@@ -45,10 +45,10 @@ const ALL_APPS_HMTL_CONFIG = { // html and configuration for generic public page
             }
         }
         text+= "<tr style='width:100%; font-size:12px; overflow:normal'><td style='width:100px'>"+" </td><td>"+"</td></tr>"
-        text+= "<tr style='width:100%; font-size:12px; overflow:normal'><td style='width:100px'>"+"Published by" +": </td><td>"+record.data_owner+"</td></tr>"
         let theDate = new Date(record._date_published || record._date_modified)
-        text+= "<tr style='width:100%; font-size:12px; overflow:normal'><td style='width:100px'>"+" on (date) " +": </td><td>"+theDate.toLocaleDateString()+"</td></tr>"
-        text+= "<tr style='width:100%; font-size:12px; overflow:normal'><td style='width:100px'>"+" with app " +": </td><td>"+record._app_name+"</td></tr>"
+        text+= "<tr style='width:100%; font-size:12px; overflow:normal'><td style='width:100px'>"+"Published by" +": </td><td>"+record._data_owner+" on "+theDate.toLocaleDateString()+"</td></tr>"
+        //text+= "<tr style='width:100%; font-size:12px; overflow:normal'><td style='width:100px'>"+" on (date) " +": </td><td>"+theDate.toLocaleDateString()+"</td></tr>"
+        //text+= "<tr style='width:100%; font-size:12px; overflow:normal'><td style='width:100px'>"+" with app " +": </td><td>"+record._app_name+"</td></tr>"
 
         text+="</table>"
         text+="</div>"
@@ -393,6 +393,7 @@ gotoShowInitialData = function(res, freezr_environment, options) {
                 async.forEach(results.results, function (permission_record, cb2) {
                     html_content=null; html_file=null;
                     if (!permission_record || !permission_record._app_name) { // (false) { //
+                      con
                         helpers.app_data_error(exports.version, "public_handler:gotoShowInitialData:freezrInternalCallFwd", "no_permission_or_app", "Uknown error - No permission or app name for a record ");
                     } else {
                         if (!app_cards[permission_record._app_name]) {
@@ -682,7 +683,7 @@ exports.dbp_query = function (req, res){
     // note conflict if have app_name and requestee_app and req.param
     if (req.query.app_name) permission_attributes.requestee_app = req.query.app_name.toLowerCase();
     if (req.query.app) permission_attributes.requestee_app = req.query.app.toLowerCase();
-    if (req.params.app_name) permission_attributes.requestee_app = req.params.app_name.toLowerCase();
+    if (req.params && req.params.app_name) permission_attributes.requestee_app = req.params.app_name.toLowerCase();
     if (req.query.user_id && !permission_attributes.data_owner) permission_attributes.data_owner = req.query.user_id.toLowerCase();
     if (req.query.pid && !permission_attributes._id) permission_attributes._id = req.query.pid;
 
@@ -712,7 +713,7 @@ exports.dbp_query = function (req, res){
             collection_name:"accessible_objects",
             owner:'freezr_admin'
           }
-          db_handler.db_find (req.freezr_environment, ACCESSIBLES_APPCOLLOWNER, permission_attributes, {sort:sort, count:count, skip:skip}, cb)
+          db_handler.query (req.freezr_environment, ACCESSIBLES_APPCOLLOWNER, permission_attributes, {sort:sort, count:count, skip:skip}, cb)
         },
         // 3 see permission record and make sure it is still granted
         function (results, cb) {
@@ -734,7 +735,8 @@ exports.dbp_query = function (req, res){
                             //cb2(null)
                         } else {
                             if (!permission_record.data_record) permission_record.data_record = {};
-                            permission_record.data_object._app_name = permission_record.requestee_app;
+                            permission_record.data_object._app_name = permission_record.requestor_app;
+                            permission_record.data_object._data_owner = permission_record.data_owner;
                             permission_record.data_object._permission_name = permission_record.permission_name;
                             permission_record.data_object._collection_name = permission_record.collection_name;
                             permission_record.data_object._date_modified = permission_record._date_modified;
@@ -829,7 +831,7 @@ exports.get_data_object= function(req, res) {
             } else if (!collection_name){
                 cb(app_err("missing collection_name"));
             } else {
-              db_handler.db_find(req.freezr_environment, appcollowner, {'_id':data_object_id}, {}, cb)
+              db_handler.query(req.freezr_environment, appcollowner, {'_id':data_object_id}, {}, cb)
             }
         },
 
@@ -867,7 +869,7 @@ exports.get_data_object= function(req, res) {
                     if (!a_perm_model || !permission_type || (helpers.permitted_types.type_names.indexOf(permission_type)<0 && permission_type!="db_query")) {
                         cb2(null);
                     } else {
-                        db_handler.permission_by_owner_and_permissionName (req.freezr_environment, user_id, req.params.requestee_app, req.params.requestee_app, permission_name, function(err, results){
+                        db_handler.permission_by_owner_and_permissionName (req.freezr_environment, user_id, req.params.requestor_app, req.params.requestee_app_table, permission_name, function(err, results){
                             if (!results || results.length==0 || !results[0].granted) {
                                 //onsole.log("no results")
                             }  else  { // it is granted and (permission_type=="object_delegate")
@@ -910,6 +912,76 @@ exports.get_data_object= function(req, res) {
 }
 
 
+exports.get_public_file= function(req, res) {
+    //    app.get('/v1/publicfiles/:requestee_app/:user_id/*', addVersionNumber, public_handler.get_public_file);
+  // Initialize variables
+  let resulting_record, record_is_permitted = false;
+  let parts = req.originalUrl.split('/');
+  parts = parts.slice(4);
+  let requestedFolder = parts.length==2? "/": (parts.slice(1,parts.length-1)).join("/");
+  const data_object_id = decodeURI( parts.join("/")).split('?')[0].split('#')[0];
+  const collection_name = "files"
+  const {user_id,requestee_app}  = req.params
+  const appcollowner = {
+    app_name:requestee_app,
+    collection_name:collection_name,
+    owner:user_id
+  }
+
+  function app_err(message) {return helpers.app_data_error(exports.version, "get_public_file", req.params.requestee_app, message);}
+  function app_auth(message) {return helpers.auth_failure("public_handler", exports.version, "get_public_file", message);}
+
+  async.waterfall([
+  // 0. get item
+  function (cb) {
+    db_handler.read_by_id(req.freezr_environment, appcollowner, data_object_id, cb)
+  },
+
+  // 4. check if record fits permission criteria
+  function (results, cb) {
+    if (!results) {
+        cb(app_err("no related records"))
+    } else {
+      resulting_record = results;
+      if (resulting_record._accessible_By && resulting_record._accessible_By.groups && resulting_record._accessible_By.groups.indexOf("public")>-1) {
+          cb(null)
+      } else cb(app_err("permission not granted"))
+    }
+  },
+
+  // The rest of this is double checking that permission is still granted. (normaly if not granted, the field is remvoed as well)
+  // 5. Deal with permissions and get app permissions and if granted, open field_permissions or object_permission collection
+  // 6. check the permission - for files, could be one of many
+  function (cb) {
+    const possible_permissions = (resulting_record && resulting_record._accessible_By && resulting_record._accessible_By.group_perms && resulting_record._accessible_By.group_perms.public && resulting_record._accessible_By.group_perms.public.length>0)? resulting_record._accessible_By.group_perms.public:null;
+    async.forEach(possible_permissions, function (perm_string, cb2) {
+      const [requestor_app, permission_name]=perm_string.split('/')
+      db_handler.permission_by_owner_and_permissionName (req.freezr_environment, user_id, requestor_app, requestee_app+"."+collection_name, permission_name, function(err, results){
+          if (!results || results.length==0 || !results[0].granted) {
+            console.warn("no results in permission_by_owner_and_permissionName ",user_id, requestor_app, requestee_app+"."+collection_name, permission_name, "end")
+          }  else  { // it is granted
+            if (results[0].granted) record_is_permitted = true;
+          }
+          cb2(null)
+      })
+    },
+    function (err) {
+        if (err) {helpers.state_error("public_handler", exports.version, "get_public_file", err, "async err" )}
+        cb(null)
+    });
+  }
+  ],
+  function (err) {
+    if (err) {helpers.state_error("public_handler", exports.version, "get_public_file", err, "waterfall err" )}
+    if (!record_is_permitted) {
+      res.sendStatus(401);
+    } else {
+        var filePath = "userfiles/"+user_id+"/"+requestee_app+"/"+unescape(parts.slice(1).join("/").split('?')[0]);
+        file_handler.sendUserFile(res, filePath, req.freezr_environment );
+    }
+  });
+}
+
 var recheckPermissionExists = function(env_params, permission_record, freezr_environment, callback) {
     // todo - consider removing this in future - this is redundant if app_handler.setObjectAccess works correctly
     //onsole.log("recheckPermissionExists", permission_record)
@@ -919,7 +991,7 @@ var recheckPermissionExists = function(env_params, permission_record, freezr_env
     async.waterfall([
     // 0. get app config
         function (cb) {
-            file_handler.async_app_config(permission_record.requestee_app, freezr_environment,cb);
+            file_handler.async_app_config(permission_record.requestor_app, freezr_environment,cb);
         },
     // 1. make sure all data exits and get app permissions and...
     function (got_app_config, cb) {
@@ -931,11 +1003,10 @@ var recheckPermissionExists = function(env_params, permission_record, freezr_env
         } else if (!permission_model){
             cb(helpers.app_data_error(exports.version, "recheckPermissionExists", permission_record.requestee_app, "missing or removed app_config"));
         } else {
-            //onsole.log("permission_record")
-            //onsole.log(permission_record)
-            console.log("need to revheck logic here as _ owner was changed to data_owner")
+            //onsole.log("permission_record",permission_record)
+            // todo "2020 - nb may need to recheck logic here as _ owner was changed to data_owner")
             if (!permission_record.data_owner && permission_record.data_owner!="freezr_admin") permission_record.data_owner=permission_record.data_owner; // fixing legacy
-            db_handler.permission_by_owner_and_permissionName (env_params, permission_record.data_owner, permission_record.requestor_app, permission_record.requestee_app, permission_record.permission_name, cb)
+            db_handler.permission_by_owner_and_permissionName (env_params, permission_record.data_owner, permission_record.requestor_app, permission_record.requestee_app_table, permission_record.permission_name, cb)
         }
     },
         /* from setObjectAccess for permission_record

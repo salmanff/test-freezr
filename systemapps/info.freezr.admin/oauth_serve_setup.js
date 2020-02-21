@@ -28,7 +28,7 @@ freezr.initPageScripts = function() {
             params = getParamsFromList(args[2]);
             oa_params.enabled = true;
             writeOauthPerm(params);
-            break;          
+            break;
           case 'disable':
             params = getParamsFromList(args[2]);
             oa_params.enabled = false;
@@ -46,7 +46,7 @@ var getParamsFromList = function(oauth_id) {
   PARAM_LIST.forEach(function(aParam) {
     if (document.getElementById(aParam+"_"+oauth_id) ) {
       oa_params[aParam] = document.getElementById(aParam+"_"+oauth_id).innerHTML;
-    } 
+    }
   } )
   return oa_params;
 }
@@ -54,13 +54,13 @@ var populateEditFields = function(params) {
   PARAM_LIST.forEach(function(aParam) {
     if (document.getElementById('oa_'+aParam) ) {
       document.getElementById('oa_'+aParam).value = (oa_params[aParam] || "") ;
-    } 
+    }
   } )
 }
 
 const states_issued = {}
 var makeOauth = function () {
-  console.log("todo - Basic error checking") // has to be string 
+  //onsole.log("todo - Basic error checking") // has to be string 
   document.body.scrollTop = 0;
 
   var hasAll = true;
@@ -100,5 +100,3 @@ var showError = function(errorText) {
   var errorBox=document.getElementById("errorBox");
   errorBox.innerHTML= errorText;
 }
-
-

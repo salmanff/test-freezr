@@ -228,19 +228,8 @@ const add_app_uses = function(){
         app.get('/v1/pdbq', addVersionNumber, public_handler.dbp_query);
         app.get('/v1/pdbq/:app_name', addVersionNumber, public_handler.dbp_query);
         app.post('/v1/pdbq', addVersionNumber, public_handler.dbp_query);
-        app.get('/v1/publicfiles/:requestee_app/:user_id/*', addVersionNumber, public_handler.get_data_object);
-
+        app.get('/v1/publicfiles/:requestee_app/:user_id/*', addVersionNumber, public_handler.get_public_file);
         app.get('/v1/pobject/:user_id/:app_name/:collection_name/:data_object_id', addVersionNumber, public_handler.generatePublicPage);
-
-
-    // permissions
-        app.put('/v1/permissions/setobjectaccess/:requestor_app/:permission_name', userLoggedInRights, app_handler.setObjectAccess);
-        app.put('/v1/permissions/change/:requestee_app', userLoggedInRights, account_handler.changeNamedPermissions);
-        app.get('/v1/permissions/getall/:requestee_app', userDataAccessRights, account_handler.all_app_permissions);
-        app.get('/v1/permissions/groupall/:requestee_app', userDataAccessRights, account_handler.all_app_permissions);
-        app.get('/v1/permissions/gethtml/:requestee_app', userDataAccessRights, account_handler.generatePermissionHTML);
-        // todo & review / redo app.put('/v1/permissions/setfieldaccess/:requestor_app/:source_app_code/:permission_name', userDataAccessRights, app_handler.setFieldAccess);
-        // todo & review / redoapp.get('/v1/permissions/getfieldperms/:requested_type/:requestor_app/:source_app_code', userDataAccessRights, app_handler.getFieldPermissions)
 
     // developer utilities
         app.get('/v1/developer/config/:app_name',userLoggedInRights, app_handler.getConfig);
@@ -252,10 +241,9 @@ const add_app_uses = function(){
         app.get ('/account/login', addVersionNumber, account_handler.generate_login_page);
         app.get ('/login', addVersionNumber, account_handler.generate_login_page);
         app.get('/account/appdata/:app_name/:action', appPageAccessRights, account_handler.generateSystemDataPage);
-        app.get ('/account/:page/:requestee_app', appPageAccessRights, account_handler.generateAccountPage); // for "perms"
+        app.get ('/account/:page/:app_name', appPageAccessRights, account_handler.generateAccountPage); // for "perms"
         app.get ('/account/:page', appPageAccessRights, account_handler.generateAccountPage);
 
-        app.get('/v1/account/ping', addVersionNumber, account_handler.ping);
         app.post('/v1/account/login', addVersionNumber, account_handler.login);
         app.post('/v1/account/applogout', addVersionNumber, account_handler.app_logout);
         app.put ('/v1/account/changePassword.json', userLoggedInRights, account_handler.changePassword);
@@ -308,6 +296,7 @@ const add_app_uses = function(){
         app.post('/v1/admin/dbquery/:collection_name', requireAdminRights, admin_handler.dbquery);
 
     // CEPS
+        app.get('/ceps/ping', addVersionNumber, account_handler.ping);
         app.post('/ceps/app_token', addVersionNumber, account_handler.login_for_app_token);
         app.post('/ceps/write/:app_table', userDataAccessRights, app_handler.write_record);
         app.get('/ceps/read/:app_table/:data_object_id', userDataAccessRights, app_handler.read_record_by_id);
@@ -316,6 +305,7 @@ const add_app_uses = function(){
         app.delete('/ceps/:app_table/:data_object_id', userDataAccessRights, app_handler.delete_record)
         // app files and pages and user files
 
+        app.get('/feps/ping', addVersionNumber, account_handler.ping);
         app.post('/feps/write/:app_table', userDataAccessRights, app_handler.write_record);
         app.post('/feps/write/:app_table/:data_object_id', userDataAccessRights, app_handler.write_record);
         app.get('/feps/read/:app_table/:data_object_id', userDataAccessRights, app_handler.read_record_by_id);
@@ -328,9 +318,18 @@ const add_app_uses = function(){
         app.post('/feps/upsert/:app_table', userDataAccessRights, app_handler.write_record);
 
     // userfiles
+        app.get('/feps/getuserfiletoken/:permission_name/:requestee_app_name/:requestee_user_id/*', userDataAccessRights, app_handler.read_record_by_id); // collection_name is files
         app.put('/feps/upload/:app_name',userDataAccessRights, uploadFile);
-        app.get('/v1/userfileGetToken/:permission_name/:requestee_app_name/:requestee_user_id/*', userDataAccessRights, app_handler.read_record_by_id); // collection_name is files
-        app.get('/v1/userfiles/:user_id/:requestee_app/*', addVersionNumber, app_handler.sendUserFile); // collection_name is files
+        app.get('/feps/userfiles/:requestee_app/:user_id/*', addVersionNumber, app_handler.sendUserFile); // collection_name is files
+
+    // permissions
+        app.put('/v1/permissions/setobjectaccess/:requestor_app/:permission_name', userLoggedInRights, app_handler.setObjectAccess);
+        app.put('/v1/permissions/change/:requestee_app', userLoggedInRights, account_handler.changeNamedPermissions);
+        app.get('/v1/permissions/getall/:app_name', userDataAccessRights, account_handler.all_app_permissions);
+        app.get('/v1/permissions/groupall/:app_name', userDataAccessRights, account_handler.all_app_permissions);
+        app.get('/v1/permissions/gethtml/:app_name', userDataAccessRights, account_handler.generatePermissionHTML);
+        // todo & review / redo app.put('/v1/permissions/setfieldaccess/:requestor_app/:source_app_code/:permission_name', userDataAccessRights, app_handler.setFieldAccess);
+        // todo & review / redoapp.get('/v1/permissions/getfieldperms/:requested_type/:requestor_app/:source_app_code', userDataAccessRights, app_handler.getFieldPermissions)
 
 
     // default redirects
@@ -339,6 +338,21 @@ const add_app_uses = function(){
             if (!freezr_prefs.public_landing_page) return "/ppage";
             return "/papp/"+freezr_prefs.public_landing_page;
         }
+        app.get('/feps*', function (req, res) {
+            helpers.log(req,"unknown feps api url "+req.url)
+            visit_logger.record(req, freezr_environment, freezr_prefs);
+            helpers.send_failure(res, helpers.error("invalid api url:",req.path), "server.js", VERSION, "server");
+        })
+        app.get('/ceps*', function (req, res) {
+            helpers.log(req,"unknown feps api url "+req.url)
+            visit_logger.record(req, freezr_environment, freezr_prefs);
+            helpers.send_failure(res, helpers.error("invalid api url:",req.path), "server.js", VERSION, "server");
+        })
+        app.get('/v1/*', function (req, res) {
+            helpers.log(req,"unknown api url "+req.url)
+            visit_logger.record(req, freezr_environment, freezr_prefs);
+            helpers.send_failure(res, helpers.error("invalid api url:",req.path), "server.js", VERSION, "server");
+        })
         app.get("/", function (req, res) {
             // to if allows public people coming in, then move to public page
             //onsole.log("redirecting to account/home as default for "+req.originalUrl);
@@ -348,11 +362,6 @@ const add_app_uses = function(){
             res.redirect( redirect_url);
             res.end();
         });
-        app.get('/v1/*', function (req, res) {
-            helpers.log(req,"unknown api url "+req.url)
-            visit_logger.record(req, freezr_environment, freezr_prefs);
-            helpers.send_failure(res, helpers.error("invalid api url:",req.path), "server.js", VERSION, "server");
-        })
         app.get('*', function (req, res) {
             helpers.log(req,"unknown url redirect: "+req.url)
             visit_logger.record(req, freezr_environment, freezr_prefs, {source:'redirect'});

@@ -226,7 +226,6 @@ exports.sendUserFile = function(res, partialUrl, env_params) {
     var path_parts = partialUrl.split("/");
     var app_name = path_parts[2];
 
-    console.log("sendUserFile "+partialUrl)
     if (useCustomEnvironment(env_params, app_name) ) {
         custom_environment.sendUserFile(res, partialUrl, env_params);
     } else {
@@ -605,7 +604,7 @@ var userAppsLocalPathTo = function(partialUrl) {
 const FREEZR_CORE_CSS = '<link rel="stylesheet" href="/app_files/info.freezr.public/freezr_core.css" type="text/css" />'
 const FREEZR_CORE_JS = '<script src="/app_files/info.freezr.public/freezr_core.js" type="text/javascript"></script>'
 exports.load_data_html_and_page = function(res,options, env_params){
-  //onsole.log("load_data_html_and_page for "+JSON.stringify(options.page_url) )
+  console.log("load_data_html_and_page for "+JSON.stringify(options.page_url) )
   exports.get_file_content(options.app_name, options.page_url, env_params, function(err, html_content) {
     if (err) {
         helpers.warning("file_handler", exports.version, "load_data_html_and_page", "got err reading: "+exports.partPathToAppFiles(options.app_name, options.page_url) )

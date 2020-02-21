@@ -357,5 +357,5 @@ var objects_are_similar = function (obj1, obj2) {
 
 exports.isEmpty = function(obj)  {
     if (!obj) return true
-    return Object.keys(obj).length === 0;
+    return Object.keys(obj).length === 0 && obj.constructor === Object;
 }

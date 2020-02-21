@@ -3,9 +3,7 @@
 
 
 freezr.initPageScripts = function() {
-	console.log("oauth_start_oauth fragments")
-	console.log(fragments);
-	console.log(fragments.sender+ " vs " + document.referrer)
+	//onsole.log("oauth_start_oauth fragments",fragments.sender+ " vs " + document.referrer, fragments)
 	if (!fragments.type) {
 		showError("Error - Missing type")
 	} else if (!fragments.name) {
@@ -16,7 +14,7 @@ freezr.initPageScripts = function() {
 		showError("Error - Missing sender")
 	} else {
 			if (fragments.sender.replace("http://","https://") != document.referrer.replace("http://","https://")) {
-				console.log("Error -  inconsitent sender (oauthor compared to fragements):"+fragments.sender+ " vs " + document.referrer)
+				console.warn("Error -  inconsitent sender (oauthor compared to fragements):"+fragments.sender+ " vs " + document.referrer)
 				showError("Error -  inconsitent sender (oauthor compared to fragements)")
 			}
 	    let options = {
@@ -28,12 +26,8 @@ freezr.initPageScripts = function() {
 
 	    freezer_restricted.connect.read("/v1/admin/oauth/public/get_new_state", options, function(jsonString) {
 	    	jsonString = freezr.utils.parse(jsonString);
-	    	console.log("got jsonString "+JSON.stringify(jsonString))
-
-	      //
 	    	let redirect_uri = freezr_server_address+"/admin/public/oauth_validate_page";
 	    	const allurl = "https://dropbox.com/oauth2/authorize?response_type=token&state="+jsonString.state+"&client_id="+jsonString.key+"&redirect_uri="+encodeURIComponent(redirect_uri)
-	    	console.log("opening "+allurl)
 	    	window.open(allurl,"_self");
 
 	    });
