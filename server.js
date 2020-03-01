@@ -461,9 +461,9 @@ async.waterfall([
                   cb(null)
               } else {
                   if (freezr_environment.freezr_is_setup) helpers.warning("server.js", exports.version, "startup_waterfall", "freezr_environment on server not found" )
-                  if (env_on_db) {
+                  if (env_on_db && env_on_db.params) {
                       console.log("2 - Using db version of freezr_environment (as file doesnt exist)")
-                      freezr_environment = env_on_db
+                      freezr_environment = env_on_db.params
                       freezr_environment.env_on_db_only = true;
                       cb(null)
                   } else {
