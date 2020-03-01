@@ -3,6 +3,7 @@
 // It can be customized for other environments
 exports.version = "0.0.124";
 
+
 var path = require('path'),
     fs = require('fs'),
     async = require('async'),
@@ -74,7 +75,6 @@ var autoDbParams = function(callback) {
     }
   }
   // NB todo this replicates the db waterfall so may need to be merged / cleaned up)
-
   async.waterfall([
     // 1 MONGO_EXTERNAL check for environment variables being set at process.env for mongo
     function (cb) {
@@ -98,7 +98,8 @@ var autoDbParams = function(callback) {
                 haveWorkingDb=true;
                 main_db_params = otherOptions.MONGO_EXTERNAL.params
               } else {
-                console.warn("GOT ERR FOR MONGO_EXTERNAL",err)
+                console.log(err)
+                console.warn("GOT ERR FOR MONGO_EXTERNAL")
               }
               cb(null)
           })
@@ -116,6 +117,7 @@ var autoDbParams = function(callback) {
                 haveWorkingDb=true;
                 main_db_params = otherOptions.MONGO_EXTERNAL.params
               } else {
+                console.log(err)
                 console.warn("GOT ERR FOR MONGO_EXTERNAL")
               }
               cb(null)
