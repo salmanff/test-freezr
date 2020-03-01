@@ -98,7 +98,7 @@ var autoDbParams = function(callback) {
                 haveWorkingDb=true;
                 main_db_params = otherOptions.MONGO_EXTERNAL.params
               } else {
-                console.warn("GOT ERR FOR MONGO_EXTERNAL")
+                console.warn("GOT ERR FOR MONGO_EXTERNAL",err)
               }
               cb(null)
           })
