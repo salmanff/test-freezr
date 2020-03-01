@@ -26,16 +26,19 @@ var current_date = dateString();
 var day_db_log = {};
 var saveTimer = null;
 
+const LOGGER_APC = {
+  app_name:'info.freezr.admin',
+  collection_name:"visit_log_daysum",
+  owner:'fradmin'
+}
+
+
 exports.reloadDb = function (env_params, callback) {
 	// get the latest from db
 	// get the latest file, if any and have the counter
 	var today = dateString();
-  const appcollowner = {
-    app_name:'info_freezer_admin',
-    collection_name:'visit_log_daysum',
-    owner:'freezr_admin'
-  }
-  db_handler.read_by_id (env_params, appcollowner, today, (err, object) => {
+
+  db_handler.read_by_id (env_params, LOGGER_APC, today, (err, object) => {
     //onsole.log("visit_logger got today object :",today)
     if (err) {
       console.warn(err)
@@ -97,7 +100,7 @@ function write_full_log_file (req, env_params, callback) {
 	if (!last_file_name) make_new_file=true;
 	if (make_new_file) last_file_name = "full_logs_"+current_date+".json";
 
-	var the_url = "userfiles/freezr_admin/daily_log_files/"+(new Date().getFullYear())
+	var the_url = "userfiles/fradmin/daily_log_files/"+(new Date().getFullYear())
 	file_handler.writeTextToUserFile (
 		file_handler.normUrl(the_url),
 		last_file_name,
@@ -132,13 +135,8 @@ function saveToDb(env_params) {
 	// find one date to log. if more old days exist (unlikely), it will deal with one on each save
 
 	var write = day_db_log[theDateString]
-  appcollowner = {
-    app_name:'info_freezer_admin',
-    collection_name:'params',
-    owner:'freezr_admin'
-  }
 
-  db_handler.upsert (env_params, appcollowner, theDateString, write, (err, entity)=>{
+  db_handler.upsert (env_params, LOGGER_APC, theDateString, write, (err, entity)=>{
     if (err) {
       helpers.state_error("visit_logger", exports.version, "saveToDb", err, "err_writing_logs_to_db")
     } else {

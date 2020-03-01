@@ -182,10 +182,10 @@ exports.write_record = function (req, res){ // create update or upsert
   let requestor_app, collection_name, app_config, data_model, appcollowner, app_err, app_auth;
   let own_collection=false
   const is_upsert = (req.query.upsert=='true')
-  const is_update = helpers.startsWith(req.url,"/ceps/update") || helpers.startsWith(req.url,"/ceps/update");
+  const is_update = helpers.startsWith(req.url,"/ceps/update") || helpers.startsWith(req.url,"/feps/update");
+  const replaceAllFields = is_update && (req.query.replaceAllFields || helpers.startsWith(req.url,"/ceps/update") )
   const is_ceps = helpers.startsWith(req.url,"/ceps/")
   const is_query_based_update = (!is_ceps && is_update && !req.params.data_object_id && req.body.q && req.body.d)
-  const keys_only = req.query.setkeys? true:false
 
   async.waterfall([
     // 1. check app token .. and set user_id based on record if not a param...
@@ -208,9 +208,9 @@ exports.write_record = function (req, res){ // create update or upsert
           cb(app_err("Missing data parameters."));
         } else if (!appcollowner.own_collection || appcollowner.app_name!=requestor_app) { // note the two conditions are equivalent
           cb(app_err("CEPs has not defined write permissions - Can only write to tables containing app name"))
-        } else if (helpers.system_apps.indexOf(requestor_app)>-1) {
+        } else if (helpers.is_system_app(requestor_app)) {
           cb(helpers.invalid_data("app name not allowed: "+requestor_app, "account_handler", exports.version, "write_record"));
-        } else if (is_ceps && (is_upsert || (is_update && (!data_object_id  || keys_only)))) {
+        } else if (is_ceps && (is_upsert || (is_update && !data_object_id))) {
           cb(app_err("CEPs is not yet able to do upsert, and key only updates and query based updates."))
         } else {
           cb(null);
@@ -244,12 +244,11 @@ exports.write_record = function (req, res){ // create update or upsert
 
     // 4. write
     function (results, cb) {
-    //onsole.log("Going to write id "+data_object_id+((results && results.length>0)? ("item exists",results): "new item"));
       if (is_query_based_update){ // no results needed
         db_handler.update (req.freezr_environment, appcollowner, write.q, write.d,{replaceAllFields:false /*redundant*/}, cb)
       } else if (results) {
         if (is_upsert || (is_update && results._date_created /*ie is non empty record*/) ){ // one entity
-          db_handler.update (req.freezr_environment, appcollowner, data_object_id, write,{replaceAllFields:(!keys_only), old_entity:results}, cb)
+          db_handler.update (req.freezr_environment, appcollowner, data_object_id, write,{replaceAllFields:replaceAllFields, old_entity:results}, cb)
         } else {
           let errmsg = is_upsert? "internal err in old record":"Record exists - use 'update' to update existing records"
           cb(helpers.auth_failure("app_handler", exports.version, "write_record", requestor_app, errmsg));
@@ -427,7 +426,7 @@ exports.read_record_by_id= function(req, res) {
     });
 }
 exports.db_query = function (req, res){
-    helpers.log (req,"db_query: "+req.url+" body "+JSON.stringify(req.body))
+    helpers.log (req,"db_query -- in app_hanlder: "+req.url+" body "+JSON.stringify(req.body))
     //app.get('/ceps/query/:app_table', userDataAccessRights, app_handler.db_query); (req.params contain query)
     //app.get('/feps/query/:app_table', userDataAccessRights, app_handler.db_query); (same as ceps)
     //app.post('/feps/query/:app_table', userDataAccessRights, app_handler.db_query);
@@ -443,9 +442,15 @@ exports.db_query = function (req, res){
     let appcoll, requestor = {};
 
     db_handler.check_app_token_and_params(req, {}, function(err, token_user_id, token_app_name, logged_in) {
-      //onsole.log("get data object req.params.requestor_app:"+ req.params.requestor_app+"  requestor_app"+requestor_app)
+      //onsole.log("query  token_user_id:"+ token_user_id+"  token_app_name:"+token_app_name)
       requestor.user_id = token_user_id;
       requestor.app_name = token_app_name;
+      // special case for query from accounts folder for "view or backup data"
+      if (token_app_name=="info.freezr.account" && req.body.app_name) requestor.app_name = req.body.app_name
+
+      if (req.body.app_name=="info.freezr.admin" && req.session.logged_in_as_admin) {
+        requestor.user_id="fradmin"
+      }
 
       appcoll = appcoll_from_app_table(req.params.app_table, requestor.app_name)
 
@@ -453,9 +458,7 @@ exports.db_query = function (req, res){
       if (err) {
         console.warn(err)
         helpers.send_failure(res, req.app_auth_err("error getting device token"), "app_handler", exports.version, "db_query");
-      } else if (requestor.app_name == "info.freezr.admin") {
-          // NB this should be redundant but adding it in any case
-          helpers.send_failure(res, req.app_auth_err("Should not access admin db via this interface"), "app_handler", exports.version, "db_query");
+      //ie own_record
       } else if (!permission_name) { //ie own_record
         if (appcoll.own_collection) {
           let usersWhoGrantedAppPermission = [requestor.user_id]; // if requestor is same as requestee then user is automatically included
@@ -531,10 +534,13 @@ do_db_query = function (req,res, requestor, appcoll, usersWhoGrantedAppPermissio
     //onsole.log("looking at permitter ", permitter, "appcollowner", appcollowner, "req.body.q",req.body.q,sort,count,skip)
     db_handler.query(req.freezr_environment, appcollowner, req.body.q,
       {sort: sort, count:count, skip:skip}, function(err, results) {
-      if (app_config_permission_schema) results.map(anitem => anitem._owner = permitter)
-      for (record of results) {
-        //("todo - make this functional - 2020")
-        all_permitted_records.push(reduce_to_permitted_fields(record, return_fields));
+        //onsole.log(results)
+      if (results){
+        if (app_config_permission_schema) results.map(anitem => anitem._owner = permitter)
+        for (record of results) {
+          //("todo - make this functional - 2020")
+          all_permitted_records.push(reduce_to_permitted_fields(record, return_fields));
+        }
       }
       cb(null)
     })
@@ -641,8 +647,8 @@ get_all_query_perms = function (env_params , requestor, appcoll, permission_name
           }
           return(err)
         }
-        if (app_config_permission_schema.permitted_fields && app_config_permission_schema.permitted_fields.length>0 && Object.keys(req.body.query_params).length > 0) {
-          cb( check_query_params_permitted(req.body.query_params,app_config_permission_schema.permitted_fields))
+        if (app_config_permission_schema.permitted_fields && app_config_permission_schema.permitted_fields.length>0 && Object.keys(req.body.q).length > 0) {
+          cb( check_query_params_permitted(req.body.q,app_config_permission_schema.permitted_fields))
         } else {
           cb(null)
         }
@@ -660,7 +666,6 @@ get_all_query_perms = function (env_params , requestor, appcoll, permission_name
   })
 }
 
-// TO DO BASED ON OLD WRITE consile.log 2020
 exports.create_file_record = function (req, res){
   helpers.log (req,"ceps writeData at "+req.url+"body:"+JSON.stringify((req.body && req.body.options)? req.body.options:" none"));
 
@@ -696,7 +701,7 @@ exports.create_file_record = function (req, res){
 
         if (!fileParams.is_attached) {
           cb(app_err("Missing file"));
-        } else if (helpers.system_apps.indexOf(requestor_app)>-1) {
+        } else if (helpers.is_system_app(requestor_app)) {
           cb(helpers.invalid_data("app name not allowed: "+requestor_app, "account_handler", exports.version, "write_record"));
         } else {
           cb(null);
@@ -761,303 +766,6 @@ exports.create_file_record = function (req, res){
     });
 
 }
-exports.restore_record = function (req, res){
-  // THIS IS the OLD WRITE_RECORD - to be redone console.log 2020 - USE THIS FOR RESTORE AND UPDATE
-  //app.post('/ceps/write/:app_table', userDataAccessRights, app_handler.write_record);
-
-  // OLD
-  // app.post('/ceps/write/:app_name/', userDataAccessRights, app_handler.cepsWriteData);
-  // app.post('/ceps/write/:app_name/:collection', userDataAccessRights, app_handler.cepsWriteData);
-  // app.post('/ceps/write/:app_name/:collection/:user_id', userDataAccessRights, app_handler.cepsWriteData);
-
-  helpers.log (req,"ceps writeData at "+req.url+"body:"+JSON.stringify((req.body && req.body.options)? req.body.options:" none"));
-
-  // Initialize variables
-  let user_id;
-  let write = req.body || {};
-  let data_object_id= req.body._id? (req.body._id+"") : null;
-  delete write._id;
-
-  // Items not yet included in CEPS -
-  const restoreRecord = (req.body.options && req.body.options.restoreRecord);
-  const updateRecord  = (req.body.options && (req.body.options.updateRecord || req.body.options.update))
-  const upsertRecord  = (req.body.options && req.body.options.upsert)
-  let fileParams = {'dir':"", 'name':"", 'duplicated_file':false};
-    fileParams.is_attached = (req.file)? true:false;
-    if (req.body.options && (typeof req.body.options == "string")) req.body.options = JSON.parse(req.body.options); // needed when upload file
-    if (req.body.data && (typeof req.body.data == "string")) req.body.data = JSON.parse(req.body.data); // needed when upload file
-
-  // freezr specific actions
-  let app_config = null, data_model=null, appcollowner=null, returned_confirm_fields={}, final_object = null;
-  let isAccessibleObject, permission_object;
-  let flags = new Flags({'app_name':req.params.app_name});
-
-  function app_err(message) {return helpers.app_data_error(exports.version, "writeData", req.params.app_name, message);}
-  function app_auth(message) {return helpers.auth_failure("app_handler", exports.version, "writeData", message);}
-
-
-  // inistialisation cont.
-  const collection_name=req.params.collection || (fileParams.is_attached? "files" : DEFAULT_COLLECTION_NAME)
-
-  async.waterfall([
-    // 1. check app token .. and set user_id based on record if not a param...
-    function (cb) {
-      db_handler.check_app_token_and_params(req, {requestor_app: (restoreRecord? "info.freezr.account" : req.params.app_name)}, cb)
-    },
-    function (the_user, app_name, logged_in, cb) {
-        user_id = the_user
-        //onsole.log("checlking device codes ..", req.session.device_code, user_id, req.params.app_name)
-        cb(null)
-    },
-    // 2. get app config
-    function (cb) {
-      file_handler.async_app_config(req.params.app_name, req.freezr_environment,cb);
-    },
-    // ... and make sure all data exits and set data_model
-    function (got_app_config, cb) {
-      app_config = got_app_config;
-
-      // set data_model
-      if (fileParams.is_attached) {
-        if (req.params.collection) flags.add('warnings','collectionNameWithFiles',{'collection_name':collection_name});
-        if (data_object_id) flags.add('warnings','dataObjectIdSentWithFiles');
-        data_model = (app_config && app_config.files)? app_config.files: null;
-      } else if (req.params.collection == "files" && updateRecord){ //201909 - todo review
-        data_model = (app_config && app_config.files)? app_config.files: null;
-      } else {
-        data_model= (app_config && app_config.collections && app_config.collections[collection_name])? app_config.collections[collection_name]: null;
-      }
-
-      // Check data exists (and allow restoreRecords exception to rules)
-      if (!newObjectFieldNamesAreValid(write, data_model, {update:false})) {
-        cb(app_err("invalid field names"));
-      } else if (fileParams.is_attached && data_model && data_model.files && data_model.files.do_not_allow) {
-        cb(app_err("config doesnt allow file uploads."));
-      } else if (!fileParams.is_attached && Object.keys(write).length<=0 ) {
-        cb(app_err("Missing data parameters."));
-      } else if (helpers.system_apps.indexOf(req.params.app_name)>-1 ||
-          !collectionIsValid(collection_name,app_config,fileParams.is_attached)){
-          if (collection_name=="accessible_objects" && req.params.app_name=="info.freezr.permissions" && restoreRecord && req.body.options.password) {
-              db_handler.user_by_user_id(req.freezr_environment, user_id, function (err, user_json) {
-                  if (err) {
-                      cb(err)
-                  } else if (!req.session.logged_in_as_admin){
-                      cb(helpers.auth_failure("app_handler", exports.version, "write_record", req.params.app_name, "Need to be admin to restore records"));
-                  } else {
-                      var u = new User(user_json);
-                      if (u.check_passwordSync(req.body.options.password)) {
-                          cb(null)
-                      } else {
-                          cb(helpers.auth_failure("app_handler", exports.version, "write_record", req.params.app_name, "Cannot restore records or upload to accessible_objects without a password"));
-                      }
-                  }
-              })
-          } else if (helpers.system_apps.indexOf(req.params.app_name)>-1 ){
-              cb(helpers.invalid_data("app name not allowed: "+req.params.app_name, "account_handler", exports.version, "write_record"));
-          } else {
-              cb(app_err("Collection name "+collection_name+"is invalid."));
-          }
-      } else {
-          cb(null);
-      }
-    },
-
-
-    // 3. get data_object_id (if needed to be set manually)
-    //     and if file: error check and write file
-    function(cb) {
-      if (fileParams.is_attached) {
-        fileParams.dir = (req.body.options && req.body.options.targetFolder)?req.body.options.targetFolder : "";
-        data_object_id = file_handler.removeStartAndEndSlashes(user_id+"/"+file_handler.removeStartAndEndSlashes(""+fileParams.dir));
-        fileParams.dir = file_handler.normUrl(file_handler.removeStartAndEndSlashes("userfiles/"+user_id+"/"+req.params.app_name+"/"+file_handler.removeStartAndEndSlashes(""+fileParams.dir)) );
-        fileParams.name = ( req.body.options && req.body.options.fileName)?req.body.options.fileName : req.file.originalname;
-
-        if (!helpers.valid_filename(fileParams.name) ) {
-            cb(app_err("Invalid file name"));
-        } else if (data_model && data_model.files && data_model.files.allowed_file_types && data_model.files.allowed_file_types.length>0 && data_model.files.allowed_file_types.indexOf(file_handler.fileExt(fileParams.name))<0 ){
-            cb(app_err("invalid file type"));
-        } else if (!file_handler.valid_path_extension(fileParams.dir)) {
-            cb(app_err("invalid folder name"));
-        } else {
-            data_object_id = data_object_id+"/"+fileParams.name;
-            file_handler.writeUserFile(fileParams.dir, fileParams.name, req.body.options, data_model, req, cb);
-        }
-      } else if (restoreRecord && !updateRecord) {
-        if (!req.body.options.KeepUpdateIds){
-            delete write._id;
-        }
-        cb(null, null);
-      } else if (!updateRecord
-                && (!data_model || !data_model.make_data_id || (!data_model.make_data_id.from_field_names && !data_model.make_data_id.manual))) {
-        delete write._id;
-        cb(null, null);
-      } else if (updateRecord) { // 201909: redundant now that have it further below?
-        delete write._id;
-        cb(null, null);
-      } else if (data_model && data_model.make_data_id && data_model.make_data_id.manual) {
-        if (write._id) {
-          cb(null, null);
-        } else {
-          console.warn("write error for "+data_object_id,write)
-          cb(app_err("object id is set to manual but is missing"));
-        }
-      // then is must be make_data_id.from_field_names...
-      } else if  (data_model && data_model.make_data_id && (!data_model.make_data_id.reference_field_names || !(data_model.make_data_id.reference_field_names instanceof Array) || data_model.make_data_id.reference_field_names.length==0) ){
-        cb(app_err("object id reference field_names but none are included"));
-      } else {
-        let err = null;
-        try {
-            data_object_id = unique_id_from(data_model.make_data_id.reference_field_names, req.body.data, user_id);
-        } catch (e) {
-            err=e;
-        }
-        if (err) {cb(app_err("Could not set object_id - "+err));} else {cb(null);}
-      }
-    },
-
-    // 4. set appcollowner and get object_id and get existing object (if it exists).
-    function (new_file_name, cb) {
-      if (fileParams.is_attached && new_file_name != fileParams.name) {
-        var last =  data_object_id.lastIndexOf(fileParams.name);
-        if (last>0) {
-            data_object_id = data_object_id.substring(0,last)+new_file_name;
-        } else {
-            console.warn("SNBH - no file name in obejct id")
-        }
-      }
-      appcollowner = {
-        app_name:req.params.app_name,
-        collection_name:collection_name,
-        owner:user_id
-      }
-      if (!data_object_id) {
-        cb(null, null);
-      } else {
-        db_handler.db_find(req.freezr_environment, appcollowner, data_object_id, {}, cb)
-      }
-    },
-
-    // 5. write or update the results
-      function (results, cb) {
-        //onsole.log("Going to write id "+data_object_id+((results && results.length>0)? "item exists": "new item"));
-        //onsole.log("results of finding ",results)
-        //onsole.log("data_model ",JSON.stringify(data_model))
-
-        if (fileParams.is_attached) {write._folder = (req.body.options && req.body.options.targetFolder)? file_handler.removeStartAndEndSlashes(req.body.options.targetFolder):"/";}
-
-        // set confirm_return_fields
-        var return_fields_list = (req.body.options && req.body.options.confirm_return_fields)? req.body.options.confirm_return_fields: ['_id'];
-        for (var i =0; i<return_fields_list.length; i++) {
-            if ((typeof return_fields_list[i] == "string")  &&
-                write[return_fields_list[i]]) {
-                returned_confirm_fields[return_fields_list[i]] = write[return_fields_list[i]];
-            }
-            if (data_object_id) {returned_confirm_fields._id = data_object_id};
-        }
-
-
-        if ((results == null || results.length == 0) && req.body.options && req.body.options.updateRecord && !restoreRecord && (!data_model || !data_model.make_data_id || !data_model.make_data_id.manual) ){
-            cb(helpers.rec_missing_error(exports.version, "write_record", req.params.app_name, "Document not found. (updateRecord with no record) for record "))
-        } else if ( (results == null || results.length == 0) ) { // new document
-            if ((req.body.options && req.body.options.fileOverWrite) && fileParams.is_attached) flags.add('warnings','fileRecordExistsWithNoFile');
-            db_handler.create(req.freezr_environment, appcollowner, data_object_id, write, {restoreRecord: restoreRecord}, cb)
-        } else if (results.length == 1
-                    && ( (updateRecord || upsertRecord) ||
-                         (fileParams.is_attached  && (req.body.options && req.body.options.fileOverWrite) ) )
-                  ) { // file data being updated
-          let old_object = results[0]
-          isAccessibleObject = (old_object._accessible_By && old_object._accessible_By.groups && old_object._accessible_By.groups.length>0); // 201909 - to review
-          returned_confirm_fields._updatedRecord=true;
-          db_handler.update (req.freezr_environment, appcollowner, data_object_id, write,{replaceAllFields:true, old_entity:old_object}, cb)
-        } else if (results.length == 1) {
-            cb(app_err("data object ("+data_object_id+") already exists. Set updateRecord to true in options to update a document, or fileOverWrite to true when uploading files."));
-        } else {
-            cb(app_err("Multiple Objects retrieved - SNBH"));
-        }
-      },
-
-      //if it is an accessible object then update the accessible_object record too
-      // get permission db
-      function(write_confirm, cb) {
-        final_object = (final_object || ((write_confirm && write_confirm.entity)? write_confirm.entity:null));
-        if (!isAccessibleObject) {
-          cb(null, cb)
-        } else if (!final_object){
-          cb(app_err("Did not get back a final object for object ("+data_object_id+"). Accessile object not updated. May need to reset access or try again."));
-        } else {
-          const ACCESSIBLES_APPCOLLOWNER = {
-            app_name:'info_freezr_permissions',
-            collection_name:"accessible_objects",
-            owner:'freezr_admin'
-          }
-          //onsole.log(final_object._accessible_By)
-          if (final_object._accessible_By.group_perms.public) { // todo? also do for non public?
-              async.forEach(final_object._accessible_By.group_perms.public, function (requestorapp_permname, cb2) {
-                var acc_id = user_id+"/"+requestorapp_permname+"/"+req.params.app_name+"/"+collection_name+"/"+data_object_id;
-                //onsole.log("getting acc_id "+acc_id)
-                db_handler.db_getbyid(req.freezr_environment, ACCESSIBLES_APPCOLLOWNER, acc_id, function(err, results) {
-                  if (!results) {
-                      flags.add('warnings', "missing_accessible", {"_id":acc_id, "msg":"permission does not exist - may have been removed - should remove public"});
-                      cb2(null);
-                  } else {
-                      permission_object = results;
-                      permission_object.data_object = {};
-                      var requestorApp = requestorapp_permname.split("/")[0];
-
-                      file_handler.async_app_config(requestorApp, req.freezr_environment, function(err, requestorAppConfig){
-                          if (err) {
-                              console.warn("Error getting requestorAppConfig - todo - consider issuing flad rather than error")
-                              cb(helpers.state_error("app_handler.js", exports.version, "write_record", err, "Could not get requestor app config"));
-                          } else {
-                              const permission_name = requestorapp_permname.split("/")[1];
-                              const permission_model= (requestorAppConfig && requestorAppConfig.permissions && requestorAppConfig.permissions[permission_name])? requestorAppConfig.permissions[permission_name]: null;
-                              let new_data_obj={}
-                              if (requestorAppConfig && permission_name && permission_model){
-                                  if (permission_model.return_fields){
-                                      for (var i=0; i<permission_model.return_fields.length; i++) {
-                                          new_data_obj[permission_model.return_fields[i]] =  final_object[permission_model.return_fields[i]];
-                                      }
-                                  } else {
-                                      new_data_obj = final_object;
-                                  }
-                                  permission_object.data_object = new_data_obj;
-                                  db_handler.update (req.freezr_environment, ACCESSIBLES_APPCOLLOWNER, acc_id, permission_object,{replaceAllFields:true, old_entity:results[0]}, cb)
-                              } else {
-                                  flags.add('warnings', "app_config_error", {"_id":acc_id, "msg":"no "+(requestorAppConfig?"app_config":("permission_name or model for "+permission_name))});
-                                  cb2(null);
-                              }
-                          }
-                      })
-                  }
-              });
-          },
-          function (err) {
-              console.warn({flags})
-              if (err) {
-                  flags.add('warnings',"unkown_error_accessibles", err);
-              }
-              cb(null)
-          })
-          } else {
-            // non public objects are handled differently
-            cb(null)
-          }
-        }
-      }
-    ],
-    function (err) {
-        if (err) {
-            helpers.send_failure(res, err, "app_handler", exports.version, "write_record");
-        } else {
-            //onsole.log({final_object})
-            if (final_object && final_object._id) returned_confirm_fields._id = final_object._id; // new document
-            if (final_object && final_object._date_created) returned_confirm_fields._date_created = final_object._date_created;
-            if (final_object && final_object._date_modified) returned_confirm_fields._date_modified = final_object._date_modified;
-            if (flags && flags.warnings) console.warn("=== write_record FLAG WARNINGS === "+JSON.stringify(flags))
-            helpers.send_success(res, {"success":true, "error":null, "confirmed_fields":returned_confirm_fields,  'duplicated_file':fileParams.duplicated_file, 'flags':flags});
-        }
-    });
-}
 exports.delete_record = function (req, res){
   helpers.log (req,"ceps delete_record at "+req.url);
 
@@ -1098,6 +806,103 @@ exports.delete_record = function (req, res){
         helpers.send_failure(res, new Error("unknown write error"), "app_handler", exports.version, "delete_record");
       } else {
         helpers.send_success(res, {success:true});
+      }
+    });
+}
+exports.restore_record = function (req, res){
+  // app.post('/feps/restore/:app_table', userDataAccessRights, app_handler.restore_record)
+  // bidy has record and options: password, KeepUpdateIds, updateRecord, data_object_id
+
+
+  helpers.log (req,"ceps restore_record at "+req.url+" body:"+JSON.stringify((req.body)? req.body:" none"));
+  let user_id;
+  const write = req.body.record
+  const options = req.body.options || {KeepUpdateIds:false}
+  const data_object_id = options.data_object_id
+  const is_update = data_object_id && options.updateRecord
+
+  let app_config, data_model, appcollowner;
+
+  const app_err = function (message) {return helpers.app_data_error(exports.version, "restore_record", (options.app_name || req.params.app_table), message);}
+  const app_auth = function (message) {return helpers.auth_failure("app_handler", exports.version, "restore_record", req.params.app_table+": "+message);}
+
+  async.waterfall([
+    // 1. check app token .. and set user_id based on record if not a param...
+    function (cb) {
+      let checks = {user_id: req.session.user_id, logged_in:true, requestor_app:["info.freezr.account"]}
+      db_handler.check_app_token_and_params(req, {}, cb)
+    },
+    // 2. get requestor_app to initialise variables and check for completness
+    function (token_user_id, token_app_name, logged_in, cb) {
+      let permission_restore = (req.params.app_table == "info.freezr.admin.accessibles")
+      table_owner =permission_restore?  "fradmin":req.session.logged_in_user_id;
+
+      appcollowner = new AppCollOwner(req.params.app_table, {collection_name:options.collection_name, requestor_app:options.app_name, owner:table_owner})
+
+      if (Object.keys(write).length<=0 ) {
+        cb(app_err("No data to write"));
+        // todo - also check if app_table starts with system app names
+      } else if (permission_restore) {
+        if (req.session.logged_in_as_admin) {
+          cb(null)
+        } else {
+          cb(app_auth("need to be admin to restore records"))
+        }
+      } else if (helpers.is_system_app(options.app_name)) {
+        cb(helpers.invalid_data("app table not allowed: "+req.params.app_table, "app_handler", exports.version, "restore_record"));
+      } else {
+        cb(null);
+      }
+    },
+    // 3. get app config
+    function (cb) {
+      file_handler.async_app_config(options.app_name, req.freezr_environment,cb);
+    },
+    // ... and make sure write object conforms to the model
+    function (got_app_config, cb) {
+      app_config = got_app_config;
+      data_model= (app_config && app_config.collections && app_config.collections[appcollowner.collection_name])? app_config.collections[appcollowner.collection_name]: null;
+
+      if (!newObjectFieldNamesAreValid(write, data_model, {update:is_update})) {
+        cb(app_err("invalid field names"));
+      } else if (appcollowner.collection_name && !collectionIsValid(appcollowner.collection_name,app_config,false)){
+        cb(app_err("Collection name "+appcollowner.collection_name+"is invalid."));
+      } else if (!data_object_id && !is_update) { // Simple create object with no id
+        cb(null, null);
+      }  else if (data_object_id) { // is_upsert or update
+        db_handler.read_by_id (req.freezr_environment, appcollowner, data_object_id, function(err, results) {
+          cb(err, results)
+        })
+      } else {
+        cb(app_err("Malformed path body combo "+JSON.stringify( appcollowner)));
+      }
+    },
+
+    // 4. write
+    function (results, cb) {
+      if (results &&  is_update && results._date_created /*ie is non empty record*/)  {
+        db_handler.update (req.freezr_environment, appcollowner, data_object_id, write,{old_entity:results}, cb)
+      } else if (results && !is_update) { // should have gotten results
+        cb(app_err("Existing record found when this should not be an update ") );
+      } else if (is_update) { // should have gotten results
+        cb(app_err("record not found for an update restore") );
+      } else { // new document - should not have gotten results
+        if (write._id) delete wrtie._id
+        db_handler.create(req.freezr_environment, appcollowner, data_object_id, write, {restore_record: true}, cb)
+      }
+    }
+    ],
+    function (err, write_confirm) {
+      //onsole.log("write err",err,"write_confirm",write_confirm)
+      if (err) {
+        helpers.send_failure(res, err, "app_handler", exports.version, "restore_record");
+      } else if (!write_confirm ){
+        helpers.send_failure(res, new Error("unknown write error"), "app_handler", exports.version, "restore_record");
+      } else if (is_update){
+        helpers.send_success(res, write_confirm);
+      } else {
+        ({_id, _date_created, _date_modified} = write_confirm.entity)
+        helpers.send_success(res, {_id, _date_created, _date_modified});
       }
     });
 }
@@ -1152,9 +957,9 @@ exports.sendUserFile = function (req , res){
   let newpath = "userfiles/"+parts[1]+"/"+parts[0]+"/"+decodeURI(parts[2])
   if (!FILE_TOKEN_CACHE[key] || !FILE_TOKEN_CACHE[key][req.query.fileToken] || (new Date().getTime - FILE_TOKEN_CACHE[key][req.query.fileToken] >FILE_TOKEN_EXPIRY)) {
     if (!FILE_TOKEN_CACHE[key] ) {
-      console.warn("NO KEY",FILE_TOKEN_CACHE)}
+      console.warn("NO KEY", req.url)} // , FILE_TOKEN_CACHE
     //if ( !FILE_TOKEN_CACHE[key][req.query.fileToken]  ) //onsole.warn("NO TOKEN ",req.query.fileToken,"cache is ",FILE_TOKEN_CACHE[key])
-    if ((new Date().getTime - FILE_TOKEN_CACHE[key][req.query.fileToken] >FILE_TOKEN_EXPIRY)) //onsole.warn("EXPIRED TOKEN")
+    //if ((new Date().getTime - FILE_TOKEN_CACHE[key][req.query.fileToken] >FILE_TOKEN_EXPIRY)) //onsole.warn("EXPIRED TOKEN")
     res.sendStatus(401);
   } else {
     file_handler.sendUserFile(res, newpath, req.freezr_environment );
@@ -1190,9 +995,9 @@ exports.setObjectAccess = function (req, res) {
       real_object_id=null;
 
   const ACCESSIBLES_APPCOLLOWNER = {
-          app_name:'info_freezr_permissions',
-          collection_name:"accessible_objects",
-          owner:'freezr_admin'
+          app_name:'info.freezr.admin',
+          collection_name:"accessibles",
+          owner:'fradmin'
         }
 
   //onsole.log("req.body",req.body)
@@ -1277,16 +1082,13 @@ exports.setObjectAccess = function (req, res) {
     // 4. check permission is granted and can authorize requested fields, and if so, get permission collection
     // 5. open object by id
     function (results, cb) {
-      //onsole.log("permission_by_owner_and_permissionName")
-      //onsole.log(results)
-
       if (!results || results.length==0) {
           cb(helpers.error("PermissionMissing","permission does not exist"))
       }  else if (!results[0].granted) {
           cb(helpers.error("PermissionNotGranted","permission not granted yet"))
       } else {
           appcollowner = {
-            app_name:requestee_app_table,
+            app_table:requestee_app_table,
             collection_name:null,
             owner:user_id
           }
@@ -1363,7 +1165,7 @@ exports.setObjectAccess = function (req, res) {
                 if (addToAccessibles) changes._publicid = (doGrant? accessibles_object_id: null);
                 changes._date_published = date_Published;
                 records_changed++
-                db_handler.update (req.freezr_environment, appcollowner, data_object._id, changes,{replaceAllFields:false , old_entity:data_object /*not needed by momngo but may be useful for other db's*/}, cb)
+                db_handler.update (req.freezr_environment, appcollowner, data_object._id, changes,{replaceAllFields:false, newSystemParams:true, old_entity:data_object /*not needed by momngo but may be useful for other db's*/}, cb)
 
               },
               function (err) {
@@ -1447,12 +1249,11 @@ exports.setObjectAccess = function (req, res) {
                 write._date_published = date_Published;
                 write.data_object = the_one_public_data_object[0];
                 write.search_words = search_words;
-                write.requestee_app_table = requestee_app_table;  // in case of re-use of another object
-                write.data_owner = user_id;  // in case of re-use of another object
-                write.data_object_id = data_object_id; // in case of re-use of another object
-                write.permission_name = req.params.permission_name;  // in case of re-use of another object
-                write.requestor_app = req.params.requestor_app; // in case of re-use of another object
-                db_handler.update (req.freezr_environment, ACCESSIBLES_APPCOLLOWNER, accessibles_object_id, write,{replaceAllFields:true, old_entity:results[0]}, cb)
+                //console.log("todo - Need to review setPermissions")
+                write.requestee_app_table = requestee_app_table;  // in case of re-use of another object??
+                write.permission_name = req.params.permission_name;  // in case of re-use of another object??
+                write.requestor_app = req.params.requestor_app; // in case of re-use of another object??
+                db_handler.update (req.freezr_environment, ACCESSIBLES_APPCOLLOWNER, accessibles_object_id, write,{replaceAllFields:false, old_entity:results[0], newSystemParams:true, newSystemParams:true}, cb)
             }
         } else {cb(null, null)}
     },
@@ -1508,7 +1309,9 @@ exports.setObjectAccess = function (req, res) {
 
             // 3. open database connection & get collections
             function (the_user, app_name, logged_in, cb) {
-              db_handler.getAllCollectionNames(req.freezr_environment, req.params.app_name.replace(/\./g,"_"), cb);
+              //onsole.log("getcoll ",req.params.app_name,req.session.logged_in_as_admin)
+              if (req.params.app_name=="info.freezr.admin" && req.session.logged_in_as_admin) the_user = 'fradmin'
+              db_handler.getAllCollectionNames(req.freezr_environment, the_user, req.params.app_name, cb);
             },
 
             // 4. keep names

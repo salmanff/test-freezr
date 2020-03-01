@@ -1,4 +1,4 @@
-/* account_appdata.css - 
+/* account_appdata.css -
  * part of info.freezr.public */
 
 body {
@@ -25,7 +25,7 @@ body {
   cursor: pointer;
   margin-left: 60px;
   font-weight: normal;
-  color: blue;
+  color: blue; 
 }
 #user_id_note{
   margin: 5px;

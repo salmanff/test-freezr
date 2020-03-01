@@ -31,18 +31,15 @@ var dl = {  // download file structure
 				'source':"appdata_backup",
 				'all_collection_names': [],
 				'app_config': null
-				},
-		  	'current_collection':{ // temporary fields - can be ignored
-			  	'part':1,
-				'retrieved_all':false,
 			},
-			'collections': [
+			'saved_coll':
 				{	'name':"",
 			  		'first_retrieved_date':null,
 			  		'last_retrieved_date':null,
-			  		'data':[]
-				}
-			],
+			  		'data':[],
+						'part':1,
+					'retrieved_all':false
+				},
 			password:null
 		}
 
@@ -89,49 +86,53 @@ freezr.initPageScripts = function() {
 var getAndSaveData = function () {
 	hideElments();
 	showWarning("Retrieving data for BackUp.")
-	dl.collections[0].name = dl.meta.all_collection_names[document.getElementById("collection_names").value];
+	dl.saved_coll.name = dl.meta.all_collection_names[document.getElementById("collection_names").value];
 	document.getElementById("backup_status").innerHTML="<br/> Read these status updates from bottom to top.";
-	addStatus("Getting collection: "+dl.collections[0].name);
-	dl.collections[0].first_retrieved_date = new Date().getTime();
-	dl.collections[0].last_retrieved_date = new Date().getTime();
-	dl.current_collection.part=1;
-	dl.current_collection.retrieved_all=false;
-	dl.collections[0].data=[];
+	addStatus("Getting collection: "+dl.saved_coll.name);
+	dl.saved_coll.first_retrieved_date = new Date().getTime();
+	dl.saved_coll.last_retrieved_date = new Date().getTime();
+	dl.saved_coll.part=1;
+	dl.saved_coll.retrieved_all=false;
+	dl.saved_coll.data=[];
 	retrieve_data();
 }
 var retrieve_data = function() {
 	var queryOptions = {
 		app_name:app_name,
-		collection:dl.collections[0].name,
+		collection:dl.saved_coll.name,
 		count:retrieve_COUNT,
-		query_params: {'_date_modified':{'$lt':dl.collections[0].last_retrieved_date}}
+		q: {'_date_modified':{'$lt':dl.saved_coll.last_retrieved_date}}
 	}
-	freezr.db.query(queryOptions, gotData)
+	freezr.feps.postquery(queryOptions, gotData)
 }
 var gotData = function(returnJson) {
 	returnJson = freezr.utils.parse(returnJson);
+	if (!Array.isArray(returnJson) && returnJson.results) {returnJson = returnJson.results} // case of admin query
+
 	if (!returnJson) {
 		showWarning("Error - could not retrieve data")
-	} else if (!returnJson.results || returnJson.results.length==0) {
-		if (dl.collections[0].data.length==0) {showWarning(null); showWarning("No data found in that collection");addStatus("refresh page to try again")} else {endRetrieve();}
+	} else if (!returnJson || returnJson.length==0) {
+		if (dl.saved_coll.data.length==0) {showWarning(null); showWarning("No data found in that collection");addStatus("refresh page to try again")} else {endRetrieve();}
 	} else {
-		dl.current_collection.retrieved_all = (returnJson.results.length<retrieve_COUNT);
+		dl.saved_coll.retrieved_all = (returnJson.length<retrieve_COUNT);
+		//onsole.log("got data len:"+returnJson.length, " all?",dl.saved_coll.retrieved_all )
+		//onsole.log(returnJson)
 
-		dl.collections[0].data = dl.collections[0].data.concat(returnJson.results);
-		dl.collections[0].last_retrieved_date = dl.collections[0].data[dl.collections[0].data.length-1]._date_modified;
-		addStatus("got "+returnJson.results.length+" records for a total of "+dl.collections[0].data.length)
-		var showdate = new Date(dl.collections[0].data[dl.collections[0].data.length-1]._date_modified)
+		dl.saved_coll.last_retrieved_date = getMinDate(returnJson, dl.saved_coll.last_retrieved_date);
+		dl.saved_coll.data = dl.saved_coll.data.concat(returnJson);
+		addStatus("got "+returnJson.length+" records for a total of "+dl.saved_coll.data.length)
+		var showdate = new Date(dl.saved_coll.last_retrieved_date)
 
-		if (dl.current_collection.retrieved_all || JSON.stringify(dl.collections[0].data).length >FILE_SIZE_MAX) {
+		if (dl.saved_coll.retrieved_all || JSON.stringify(dl.saved_coll.data).length >FILE_SIZE_MAX) {
 			var fileName = saveData();
-			var lastDate = new Date(dl.collections[0].last_retrieved_date);
-			var firstDate = new Date(dl.collections[0].first_retrieved_date);
+			var lastDate = new Date(dl.saved_coll.last_retrieved_date);
+			var firstDate = new Date(dl.saved_coll.first_retrieved_date);
 			addStatus("Created file: '"+fileName+"' for data from "+lastDate.toLocaleDateString()+" "+lastDate.toLocaleTimeString()+ " to "+firstDate.toLocaleDateString()+" "+firstDate.toLocaleTimeString()+ ".");
-			dl.collections[0].first_retrieved_date = dl.collections[0].last_retrieved_date;
-			dl.current_collection.part++
-			dl.collections[0].data=[];
+			dl.saved_coll.first_retrieved_date = dl.saved_coll.last_retrieved_date;
+			dl.saved_coll.part++
+			dl.saved_coll.data=[];
 		}
-		if (!dl.current_collection.retrieved_all) {
+		if (!dl.saved_coll.retrieved_all) {
 			retrieve_data();
 		} else {
 			endRetrieve();
@@ -146,11 +147,21 @@ var endRetrieve = function() {
 var saveData = function() {
 	// codepen.io/davidelrizzo/pen/cxsGb
 	var text = JSON.stringify(dl);
-	var filename = "freezr data backup "+app_name+" coll "+dl.collections[0].name+" user "+freezr_user_id+" "+dl.meta.date+" part "+dl.current_collection.part+".json";
+	var filename = "freezr data backup "+app_name+" coll "+dl.saved_coll.name+" user "+freezr_user_id+" "+dl.meta.date+" part "+dl.saved_coll.part+".json";
 	var blob = new Blob([text], {type: "text/plain;charset=utf-8"});
 	saveAs(blob, filename);
 	return filename;
 }
+
+var getMinDate = function(list, themin) {
+	if (!themin) themin = new Date().getTime()
+	themax = 0
+	list.forEach(item => {
+		themin = Math.min(themin,item._date_modified)
+	})
+	return themin
+}
+
 
 var uploader = {
 	current_file_num:null,
@@ -239,6 +250,14 @@ var existingPurls = [];
 
 var transformRecord =  function(aRecord) {
 	if (!aRecord) return null;
+	['_date_Created','_date_Modified','_date_Published','_date_Accessibility_Mod'].forEach((alabel)=>{
+		if (aRecord[alabel]) {
+			aRecord[alabel.toLowerCase()] = aRecord[alabel]
+			delete aRecord[alabel]
+		}
+	})
+	if (aRecord.data_object && aRecord.data_object._owner)aRecord.data_owner = aRecord.data_object._owner
+	delete aRecord._owner
 	// todo - all need to be made programmatically...
 	//if (aRecord.fj_deleted) return null;
 	// for filtering lists imported. Need to do programmatically
@@ -281,36 +300,26 @@ var transformRecord =  function(aRecord) {
 
 var askToProcessNextRecord = function() {
 	//onsole.log("dealing with rec"+uploader.current_record)
-	var noMoreCollections = false
+	//onsole.log(uploader)
+	var thisRecord = uploader.file_content.saved_coll.data[++uploader.current_record];
 
-	while (!noMoreCollections && uploader.file_content.collections[uploader.current_collection_num] && uploader.file_content.collections[uploader.current_collection_num].data && ++uploader.current_record >= uploader.file_content.collections[uploader.current_collection_num].data.length) {
-		if (++uploader.current_collection_num >= uploader.file_content.collections.length) noMoreCollections=true;
-		uploader.current_record=0;
-	}
-	if (noMoreCollections){
+	if (uploader.ok_to_process_all_records) {
+		processNextRecord();
+	} else if (!thisRecord) {
+		document.getElementById("err_nums").innerHTML= "Errors uploading in total of "+(++uploader.records_erred)+" records."
+		addStatus("Error geting record - Missign data in record.<br/>")
+		console.warn("err - missing data rec ", thisRecord, "curr rec:", uploader.current_record, "coll num:",uploader.current_collection_num, " len ",uploader.file_content.saved_coll.data.length )
 		processNextFile();
 	} else {
-
-		var thisRecord = uploader.file_content.collections[uploader.current_collection_num].data[uploader.current_record];
-
-		if (uploader.ok_to_process_all_records) {
-			processNextRecord();
-		} else if (!thisRecord) {
-			document.getElementById("err_nums").innerHTML= "Errors uploading in total of "+(++uploader.records_erred)+" records."
-			addStatus("Error geting record - Missign data in record.<br/>")
-			console.log("err - missing data rec ", thisRecord, "curr rec:", uploader.current_record, "coll num:",uploader.current_collection_num, " len ",uploader.file_content.collections[uploader.current_collection_num].data.length )
-			askToProcessNextRecord();
-		} else {
-			document.getElementById("check_record").style.display="block";
-			document.getElementById("current_record").innerHTML=recordDisplay(thisRecord);
-	    }
-	  }
+		document.getElementById("check_record").style.display="block";
+		document.getElementById("current_record").innerHTML=recordDisplay(transformRecord(thisRecord));
+    }
 }
 var recordDisplay = function (aRecord) {
 	var temp = "<table class='recordTable'>";
 	for (var key in aRecord) {
-	    if (aRecord.hasOwnProperty(key)) {
-	    	temp += "<tr><td class='lhs'>"+key+"</td> <td class='rhs'> "+JSON.stringify(aRecord[key])+"</td></tr>";
+	    if (aRecord.hasOwnProperty(key) && (key!='_id' || document.getElementById("keepIdEl").checked)) {
+				temp += "<tr><td class='lhs'>"+key+"</td> <td class='rhs'> "+JSON.stringify(aRecord[key])+"</td></tr>";
 		}
 	}
 	temp+="</table>";
@@ -325,51 +334,44 @@ var processNextRecord = function() {
 	// process all records in file... then
 	document.getElementById("check_record").style.display="none";
 	document.getElementById("current_record").innerHTML="";
-	    var thisRecord = uploader.file_content.collections[uploader.current_collection_num].data[uploader.current_record];
-		if (thisRecord && transformRecord) {
-			thisRecord = transformRecord(thisRecord);
+	  var record = uploader.file_content.saved_coll.data[uploader.current_record];
+		if (record && transformRecord) {
+			record = transformRecord(record);
 		}
-		if (thisRecord) {
-			var uploadOptions = {
+		if (record) {
+			const collection_name = uploader.file_content.saved_coll.name;
+			const app_table = (app_name+(collection_name?('.'+collection_name):""))
+			const keepId = document.getElementById("keepIdEl").checked
+			var options = {
+				app_table:app_table,
 				app_name:app_name,
 				password: dl.password,
-				KeepUpdateIds : uploader.options.KeepUpdateIds, // todo - to change
-				updateRecord: (uploader.options.KeepUpdateIds),
-				data_object_id: (uploader.options.KeepUpdateIds? (thisRecord._id+""):null),
-				restoreRecord:true,
-				collection : uploader.file_content.collections[uploader.current_collection_num].name
+				KeepUpdateIds : keepId,
+				updateRecord: false,
+				data_object_id: (keepId? (record._id):null),
+				collection : collection_name
 			}
-			if (dl.meta.app_config && dl.meta.app_config.collections &&
-				uploader.file_content &&
-				dl.meta.app_config.collections[uploader.file_content.collections[uploader.current_collection_num].name] &&
-				dl.meta.app_config.collections[uploader.file_content.collections[uploader.current_collection_num].name].make_data_id) {
-			} else {
-				// delete thisRecord._id;
-			}
+			delete record._id
 
-			//onsole.log("uploading "+thisRecord.url+" with options "+JSON.stringify(uploadOptions) )
-
-			freezr.db.write (
-				thisRecord,
-				uploadOptions,
-				function (returnData) {
-					returnData = freezr.utils.parse(returnData);
-					if (returnData.error) {
-						document.getElementById("err_nums").innerHTML= "Errors uploading in total of "+(++uploader.records_erred)+" records."
-						addStatus("error uploading a record "+returnData.error+" - "+(returnData.message? returnData.message: "unknown cause") +".<br/>")
-						console.log("err uploading "+JSON.stringify(returnData) )
-					} else {
-						if (returnData.confirmed_fields._updatedRecord) uploader.records_updated+=1;
-						document.getElementById("upload_nums").innerHTML= "Total of "+(++uploader.records_uploaded)+" have been uploaded"+(uploader.records_updated?(", of which "+uploader.records_updated+" were updates of existing records."):".")
-					}
-					askToProcessNextRecord();
-				}
-			);
+			let url= "/feps/restore/"+app_table
+	    freezer_restricted.connect.send(url, JSON.stringify({record, options}),	restoreRecCallBack, "POST", 'application/json');
 		} else {
-			askToProcessNextRecord();
+			//askToProcessNextRecord();
+			processNextFile();
 		}
 }
-
+const restoreRecCallBack = function (returnData) {
+	returnData = freezr.utils.parse(returnData);
+	if (returnData.error) {
+		document.getElementById("err_nums").innerHTML= "Errors uploading in total of "+(++uploader.records_erred)+" records."
+		addStatus("error uploading a record "+returnData.error+" - "+(returnData.message? returnData.message: "unknown cause") +".<br/>")
+		console.warn("err uploading "+JSON.stringify(returnData) )
+	} else {
+		if (returnData.success) uploader.records_updated+=1;
+		document.getElementById("upload_nums").innerHTML= "Total of "+(++uploader.records_uploaded)+" have been uploaded"+(uploader.records_updated?(", of which "+uploader.records_updated+" were updates of existing records."):".")
+	}
+	askToProcessNextRecord();
+}
 // View Elements
 var hideElments = function(){
 	document.getElementById("uploadForm").style.display="none";

@@ -66,9 +66,9 @@ exports.re_init_freezr_environment = function(env_params, callback) {
 exports.check_db = function (env_params, callback) {
 		//onsole.log("check_db in gae")
     const appcollowner = {
-      app_name:'info_freezer_admin',
+      app_name:'info_freezr_admin',
 		  collection_name : 'params',
-      _owner: 'freezr_admin'
+      _owner: 'fradmin'
     }
     let env_on_db=null;
 

@@ -1,401 +1,230 @@
 // freezr.info - nodejs system files - db_default_mongo.js
 exports.version = "0.0.130"; // Changed names from db__main
 
+// todo - remove concept of unifiedDB
+
+
 var async = require('async'),
     helpers = require('../helpers.js'),
     MongoClient = require('mongodb').MongoClient,
-    file_handler = require('../file_handler.js');
-var autoCloseTimeOut;
-var freezr_environment = file_handler.existsSyncLocalSystemAppFile(file_handler.fullLocalPathToUserFiles("userfiles","freezr_environment.js"))? require(file_handler.fullLocalPathToUserFiles("userfiles","freezr_environment.js")):null;
+    ObjectID = require('mongodb').ObjectID;
 
+// State vars
+var freezrdb = null;
+let running_apps_db = {};
 
 exports.name='Mongo Datastore'
 
-var unifiedDb;
-
 const ARBITRARY_FIND_COUNT_DEFAULT = 100
 
-exports.re_init_environment_sync = function(env_params) {
-    // Resets freezr_environment
-    freezr_environment = env_params;
-}
-exports.re_init_freezr_environment = function(env_params, callback) {
-    // Resets freezr_environment
-    freezr_environment = env_params;
-    callback(null)
-    //onsole.log("resettting environment in db_default_mongo "+JSON.stringify(env))
-}
-exports.check_db = function (env_params, callback) {
-    // Checks to see if it can read / write to database - Reads the environment and writes {foo:bar}
-    // Note that env_params is not used... however it is included as custom environments may need it
-    var temp_admin_db, params_coll, env_on_db=null;
-    async.waterfall([
-        // 1. open database connection
-        function (cb) {
-            MongoClient.connect(dbConnectionString('info_freezer_admin'), cb);
-        },
-
-        // 2. create collections for users, installed_app_list, user_installed_app_list, user_devices, permissions.
-        // This section is specific to mongo implementation
-        function (theclient, cb) {
-            admin_db = theclient.db(theclient.s.options.dbName);
-            admin_db.collection(get_full_coll_name('info_freezer_admin',"users"), cb);
-        },
-
-        function (users_coll, cb) {
-           exports.users = users_coll;
-            admin_db.collection(get_full_coll_name('info_freezer_admin',"installed_app_list"), cb);
-        },
-
-        function (installed_app_list_coll, cb) {
-            exports.installed_app_list = installed_app_list_coll;
-            admin_db.collection(get_full_coll_name('info_freezer_admin',"user_installed_app_list"), cb);
-        },
-
-        function (user_installed_app_list_coll, cb) {
-            exports.user_installed_app_list = user_installed_app_list_coll;
-            admin_db.collection(get_full_coll_name('info_freezer_admin',"user_devices"), cb);
-        },
-
-        function (userdevices_coll, cb) {
-            exports.user_devices = userdevices_coll;
-            admin_db.collection(get_full_coll_name('info_freezer_admin',"permissions"), cb);
-        },
-
-        function (permissions_coll, cb) {
-            exports.permissions = permissions_coll;
-            cb(null);
-        },
-
-        // 3 - read and write params to make sure db is active
-        function (cb) {
-            admin_db.collection(get_full_coll_name('info_freezer_admin',"params"), cb);
-        },
-
-        function (the_coll, cb) {
-            params_coll = the_coll;
-            params_coll.find( {"_id":"freezr_environment"} ).toArray(cb);
-        },
-
-
-        function (results, cb) {
-            if (results && results.length>0 && results[0].params) env_on_db = results[0].params;
-            params_coll.update({'_id':"test_write_id",'foo':'bar'}, { w: 1, safe: true }, cb);
-        }
-
-    ], function(err, write_result) {
-        if (err) console.warn("got err in check_db ",err)
-        callback(err, env_on_db);
-    });
-}
-exports.set_and_nulify_environment = function(old_env) {
-    freezr_environment = old_env;
-    exports.users = null;
-    exports.installed_app_list = null; // list of apps installed by users
-    exports.user_devices = null; // set of device codes couples with user_names and whether it is an login_for_app_name login
-    exports.user_installed_app_list = null; // contains data on "show_app_on_home_screen", "order_to_show" and "app_codes"
-    exports.permissions = null;
-}
-
+// Initialisation
+//Optional functions not implemented
+  // exports.re_init_environment_sync = function(env_params) {}
+  // exports.set_and_nulify_environment
+  exports.re_init_freezr_environment = function(env_params, callback) {
+    //onsole.log("in re_init_freezr_environment")
+    const appcollowner = {
+      app_name:'info_freezr_admin',
+      collection_name : 'params',
+      owner: 'fradmin'
+    }
+    get_coll(env_params, appcollowner, (err, collection) => {
+      callback(err)})
+  }
+// Core functions
 exports.create = function (env_params, appcollowner, id, entity, options, callback) {
-  get_coll(appcollowner.app_name, appcollowner.collection_name, (err, theCollection) =>{
-    if(err) {callback(exports.state_error ("db_default_mongo", exports.version, "create", err ))
-      } else {
-        if (id) entity._id = id;
-        theCollection.insert(entity, { w: 1, safe: true }, (err, results) => {
-          if (err) callback(err);
-          else callback(null, {
-            success:true,
-            entity: (results.ops && results.ops.length>0)? results.ops[0]:null
-          })
-        });
-      }
-    })
-}
-exports.db_getbyid = function (env_params, appcollowner, id, callback){
-  //onsole.log("getbyid ",id)
-  async.waterfall([
-      // 1. open database connection
-      function (cb) {
-          MongoClient.connect(dbConnectionString(appcollowner.app_name), cb);
-      },
-
-      // 2. get collection
-      function (theclient, cb) {
-        theclient = theclient.db(theclient.s.options.dbName)
-        theclient.collection(get_full_coll_name(appcollowner.app_name,appcollowner.collection_name), cb);
-      },
-
-      // 3. Get item
-      function(collection, cb) {
-        collection.find({ _id: get_real_object_id(id) }).toArray(cb);
-      }
-  ], function(err, results) {
-      let object=null;
-      if (err) {
-        // TO helpers.error
-        console.warn("error getting object for "+app_name+" collection:"+collection_name+" id:"+id+" in db_getbyid")
-        helpers.state_error("db_default_mongo", exports.version, "db_getbyid", err, "error getting object for "+app_name+" collection:"+collection_name+" id:"+id+" in db_getbyid");
-      } else if (results && results.length>0 ){
-        object = results[0]
-      }
-      callback(err, object);
-  });
-}
-
-exports.db_update = function (env_params, appcollowner, idOrQuery, updates_to_entity, options, callback) {
-  // IMPORTANT: db_update cannot insert new entities - just update existign ones (TODO NOW CHECK)
-    // options: replaceAllFields - replaces all object rather than specific keys
-    // In replaceAllFields: function needs to take _date_created and owner from previous version and add it here
-    // TODO NOW - make sure that for update, entity must exist, otherwise, need to add _date_created and _onwer etc
-
-    //onsole.log("db_update in mongo idOrQuery ",idOrQuery, "type:" ,(typeof idOrQuery),  "options",options)
-
-    options = options || {};
-    get_coll(appcollowner.app_name, appcollowner.collection_name, (err, theCollection) =>{
-      if(err) {
-        callback(exports.state_error ("db_default_mongo", exports.version, "db_update", err ))
-      } else {
-          let find = objectifyId(idOrQuery);
-          if ( options.replaceAllFields) {
-            theCollection.find(find)
-                .limit(1)
-                .toArray((err, entities) => {
-                 if (!entities || entities.length==0) {
-                   callback(null, {nModified:0, n:0}) // todo make nModified consistent
-                 } else {
-                   let old_entity = entities[0];
-                   updates_to_entity._date_created = old_entity._date_created
-                   theCollection.update(find, updates_to_entity, {safe: true }, callback);
-                 }
-               })
-          } else {  //if (!options.replaceAllFields)
-            theCollection.update(find, {$set: updates_to_entity}, {safe: true, multi:options.multi }, callback);
-          }
-      }
-    })
-}
-exports.replace_record_by_id = function (env_params, appcollowner, id, updates_to_entity, cb) {
-  // Assumes all fields are being replaced including
-  // no options
-  get_coll(appcollowner.app_name, appcollowner.collection_name, (err, theCollection) =>{
+  get_coll(env_params, appcollowner, (err, theCollection) =>{
     if(err) {
-      callback(exports.state_error ("db_default_mongo", exports.version, "db_update", err ))
+      callback(helpers.state_error ("db_default_mongo", exports.version, "create", err ))
     } else {
-      theCollection.update({_id: get_real_object_id(id) }, {$set: updates_to_entity}, {safe: true, multi:false }, (err, result) =>{
-        if (err){
-          cb(err)
-        } else if (result && result.result && result.result.n && result.result.n == 1) { // Also nModified=1
-          cb(null, {entity:updates_to_entity})
-        } else {
-          cb(new Error("error updating record"))
-        }
+      if (id) entity._id = id;
+      theCollection.insert(entity, { w: 1, safe: true }, (err, results) => {
+        if (err) callback(err);
+        else callback(null, {
+            entity: (results.ops && results.ops.length>0)? results.ops[0]:null
+        })
       });
     }
   })
 }
-exports.db_remove = function(env_params, appcollowner, idOrQuery, options, callback){
-  // No options at this point
-  idOrQuery = objectifyId(idOrQuery)
-  if (exports[appcollowner.collection_name] ) {
-    exports[appcollowner.collection_name].remove(idOrQuery, {safe: true}, callback);
-  //} else if (running_apps_db.hasOwnProperty(appcollowner.app_name) && running_apps_db[appcollowner.app_name]) {
-    //running_apps_db[appcollowner.app_name].remove(idOrQuery, {safe: true}, callback);
-    //to - check if db is in memory?
-  } else {
-    get_coll(appcollowner.app_name, appcollowner.collection_name, (err, theCollection) =>{
-      if(err) {
-        callback(exports.state_error ("db_default_mongo", exports.version, "db_remove", err ))
-      } else {
-        theCollection.remove(idOrQuery, {multi:true}, callback);
+exports.read_by_id = function (env_params, appcollowner, id, cb) {
+  get_coll(env_params, appcollowner, function (err, theCollection) {
+    if(err) {
+      cb(helpers.state_error ("db_default_mongo", exports.version, "read_by_id", err ))
+    } else {
+      theCollection.find({ _id: get_real_object_id(id) }).toArray( (err, results) => {
+        let object=null;
+        if (err) {
+          // TO helpers.error
+          console.warn("error getting object for "+appcollowner.app_name+" or "+appcollowner.app_table+" id:"+id+" in read_by_id")
+          helpers.state_error("db_default_mongo", exports.version, "read_by_id", err, "error getting object for "+appcollowner.app_name+" / "+appcollowner.app_table+" id:"+id+" in read_by_id");
+        } else if (results && results.length>0 ){
+          object = results[0]
+        }
+        cb(err, object);
+      });
+    }
+  })
+}
+exports.query = function(env_params, appcollowner, query={}, options, cb) {
+  if (query && query._id) query._id = get_real_object_id(query._id)
+  get_coll(env_params, appcollowner, (err, theCollection) =>{
+    if(err) {
+      callback(helpers.state_error ("db_default_mongo", exports.version, "query", err ))
+    } else {
+      theCollection.find(query)
+      .sort(options.sort || null)
+      .limit(options.count || ARBITRARY_FIND_COUNT_DEFAULT)
+      .skip(options.skip || 0)
+      .toArray(cb);
+    }
+  })
+}
+exports.update_multi_records= function (env_params, appcollowner, idOrQuery, updates_to_entity, options, callback) {
+  get_coll(env_params, appcollowner, (err, coll) =>{
+    if(err) {
+      callback(helpers.state_error ("db_default_mongo", exports.version, "update_multi_records", err ))
+    } else {
+      multi=true;
+      if (typeof idOrQuery == "string") {
+        idOrQuery={'_id': get_real_object_id(idOrQuery)}
+        mutli=false
+      } else if (idOrQuery._id) {
+        idOrQuery._id = get_real_object_id(idOrQuery._id)
       }
-    })
-  }
-}
-const objectifyId = function (query) {
-  //onsole.log("onjectifying ",query,"typeof query",typeof query)
-  if (typeof query == "string") {
-    return {'_id': get_real_object_id(query)}
-  } else if (query && typeof query === 'object') {
-    for (let [akey, value] of Object.entries(query) ) {
-      if (akey == "_id" && typeof value=="string") query[akey] = get_real_object_id(value)
-      // todo if $or or $and - iterate
+      coll.update(idOrQuery, {$set: updates_to_entity}, { safe: true }, callback);
     }
-    return query
-  } else {
-    return query
-  }
+  })
 }
-exports.db_find = function(env_params, appcollowner, query, options, callback) {
-  //onsole.log("in mongo db_find ",JSON.stringify (query), "options",options)
-  query = objectifyId(query)
-  //onsole.log("in mongo NEW QUERY ",query, "options",options)
-
-  options = options || {}
-  if (appcollowner.app_name=="info_freezer_admin" && exports[appcollowner.collection_name]) {
-    exports[appcollowner.collection_name].find(query).toArray(callback)
-  } else {
-    get_coll (appcollowner.app_name, appcollowner.collection_name, (err, theCollection)=>{
-      //onsole.log(err)
-      if (err) {
-        callback(helpers.state_error ("db_default_mongo", exports.version, "db_find", err ))
-      } else {
-        theCollection.find(query)
-            .sort(options.sort || null)
-            .limit(options.count || ARBITRARY_FIND_COUNT_DEFAULT)
-            .skip(options.skip || 0)
-            .toArray(callback);
-        }
-    })
-  }
-}
-
-const get_coll = function (app_name, collection_name, callback) {
-    if (!freezr_environment.dbParams.unifiedDbName) autoCloseTimeOut = setTimeout(exports.closeUnusedApps,30000);
-    async.waterfall([
-        // 1. open database connection
-        function (cb) {
-            MongoClient.connect(dbConnectionString(app_name), cb);
-        },
-
-        // 2. create collections for users, installed_app_list, user_installed_app_list, user_devices, permissions.
-        function (theclient, cb) {
-          theclient = theclient.db(theclient.s.options.dbName)
-          theclient.collection(get_full_coll_name(app_name,collection_name), cb);
-        }
-    ], function(err, collection) {
-        if (err) console.warn("error getting "+app_name+" collection:"+collection_name+" in get coll")
-        callback(err, collection);
-    });
-}
-const get_full_coll_name = function (app_name, collection_name) {
-    // gets collection name if unified db is used
-    if (freezr_environment.dbParams.unifiedDbName || freezr_environment.dbParams.connectionString) {
-        return (app_name+"__"+collection_name)
+exports.replace_record_by_id = function (env_params, appcollowner, entity_id, updated_entity, callback) {
+  get_coll(env_params, appcollowner, (err, coll) =>{
+    if(err) {
+      callback(helpers.state_error ("db_default_mongo", exports.version, "replace_record_by_id", err ))
     } else {
-        return collection_name
+      coll.update({_id: get_real_object_id(entity_id)}, updated_entity, {safe: true  , multi:false }, callback)
     }
-}
-const dbConnectionString = function(appName) {
-    var connectionString = ""
-    if (false && freezr_environment && freezr_environment.dbParams && freezr_environment.dbParams.host && freezr_environment.dbParams.host=="localhost"  ) {
-        return 'localhost/'+(freezr_environment.dbParams.unifiedDbName? freezr_environment.dbParams.unifiedDbName: appName);
-    } else if (freezr_environment && freezr_environment && freezr_environment.dbParams) {
-        if (freezr_environment.dbParams.connectionString) {
-            return freezr_environment.dbParams.connectionString
-        } else {
-            connectionString+= 'mongodb://'
-            if (freezr_environment.dbParams.user) connectionString+= freezr_environment.dbParams.user + ":"+freezr_environment.dbParams.pass + "@"
-            connectionString += freezr_environment.dbParams.host + (freezr_environment.dbParams.host=="localhost"? "" : (":"+freezr_environment.dbParams.port) )
-            connectionString += "/"+ ((freezr_environment.dbParams && freezr_environment.dbParams.unifiedDbName)? freezr_environment.dbParams.unifiedDbName:appName)  +(freezr_environment.dbParams.addAuth? '?authSource=admin':'');
-            return connectionString
-        }
+  })
+};
+
+exports.delete_record = function (env_params, appcollowner, idOrQuery, options={}, cb) {
+  get_coll(env_params, appcollowner, (err, theCollection) =>{
+    if(err) {
+      callback(helpers.state_error ("db_default_mongo", exports.version, "read_by_id", err ))
     } else {
-        console.warn("ERROR - NO DB HOST")
-        return null;
+      if (typeof idOrQuery=="string") idOrQuery={"_id": get_real_object_id(idOrQuery)}
+      theCollection.remove(idOrQuery, {multi:true}, cb);
     }
-}
-const get_real_object_id = function (data_object_id) {
-    var ObjectID = require('mongodb').ObjectID;
-    var real_id=data_object_id;;
-    if (typeof data_object_id=="string") {
-      try {
-        real_id = new ObjectID(data_object_id);
-    } catch(e) {
-          console.warn("Could not get mongo real_id - using text id for "+data_object_id)
-    }
-  }
-  return real_id
+  })
 }
 
-
-
-// See db_handler.js for methods (legacy notation)
-var running_apps_db = {};
-exports.users = null;
-exports.installed_app_list = null; // list of apps installed by users
-exports.user_devices = null; // set of device codes couples with user_names and whether it is an login_for_app_name login
-exports.user_installed_app_list = null; // contains data on "show_app_on_home_screen", "order_to_show" and "app_codes"
-exports.permissions = null;
-exports.getAllCollectionNames = function(env_params, app_name, callback) {
-    //onsole.log(" getAllCollectionNames -"+app_name+"- hasOwnProperty "+running_apps_db.hasOwnProperty(app_name));
+exports.getAllCollectionNames = function(env_params, user_id, app_name, callback) {
     if (!running_apps_db[app_name]) running_apps_db[app_name]={'db':null, 'collections':{}};
 
     async.waterfall([
         // 1. open database connection
         function (cb) {
-            if (running_apps_db[app_name].db) {
-                cb(null, null);
-            } else if (freezr_environment.dbParams.unifiedDbName && unifiedDb) {
-                cb(null, null);
-            } else {
-                MongoClient.connect(dbConnectionString(app_name), cb);
-           }
+          if (freezrdb) {
+            cb (null, null)
+          } else {
+            MongoClient.connect(dbConnectionString(env_params, db_name), (err, ret) => cb(err, ));
+          }
         },
 
         // 2.
         function (theclient, cb) {
-            // unifiedDb  if (theDb) theDb.listCollections().toArray(cb); (also use theDb below)
-            if (freezr_environment.dbParams.unifiedDbName && !unifiedDb) {unifiedDb=theclient}
-            if (!unifiedDb && !running_apps_db[app_name].db) running_apps_db[app_name].db = theclient;
-            if (unifiedDb) {
-                unifiedDb.db(unifiedDb.s.options.dbName).listCollections().toArray(cb);
-            } else if (running_apps_db[app_name].db) {
-                theclient = running_apps_db[app_name].db
-                theclient.db(theclient.s.options.dbName).listCollections().toArray(cb);
-            } else {
-                cb(null);
-            };
+            if (!freezrdb) freezrdb = theclient.db(theclient.s.options.dbName)
+            freezrdb.listCollections().toArray(cb);
         }
+
     ], function (err, nameObjList) {
         if (err) {
-            callback(null, null);
+          callback(null, null);
         } else if (nameObjList  && nameObjList.length>0){
-            var a_name, collection_names=[];
-            if (nameObjList && nameObjList.length > 0) {
-                nameObjList.forEach(function(name_obj) {
-                    a_name = name_obj.name;
-                    if (a_name && a_name!="system") {
-                        if (!freezr_environment.dbParams.unifiedDbName) {
-                            collection_names.push(a_name);
-                        } else if (helpers.startsWith(a_name,app_name+"__")) {
-                            collection_names.push(a_name.slice(app_name.length+2));
-                        }
-                    }
-                });
-            }
-            callback(null, collection_names);
+          var a_name, collection_names=[];
+          if (nameObjList && nameObjList.length > 0) {
+            nameObjList.forEach(function(name_obj) {
+              a_name = name_obj.name;
+              if (a_name && a_name!="system" && helpers.startsWith(a_name,app_name)) collection_names.push(a_name.slice(user_id.length+app_name.length+3));
+            });
+          }
+          callback(null, collection_names);
         } else {
             callback(null, []);
         }
     });
 }
-exports.closeUnusedApps = function() {
-    //onsole.log("closeUnusedApps...")
-    var unusedAppsExist = false;
-    const closeThreshold = 20000;
-    for (var oneAppName in running_apps_db) {
-        if (running_apps_db.hasOwnProperty(oneAppName) && running_apps_db[oneAppName]) {
-            if (!running_apps_db[oneAppName].last_access || (new Date().getTime()) - running_apps_db[oneAppName].last_access  > closeThreshold) {
-                running_apps_db[oneAppName].collections = null;
-                if (running_apps_db[oneAppName].db) {
-                    var DbToClose = running_apps_db[oneAppName].db;
-                    delete running_apps_db[oneAppName];
-                    DbToClose.close(function(err2) {
-                        if (err2) {helpers.warning ("db_default_mongo", exports.version, "closeUnusedApps", "err closing "+oneAppName+" - "+err2); }
-                    });
-                } else {
-                    running_apps_db[oneAppName] = null;
-                }
-            }
-        }
-        for (var twoAppName in running_apps_db) {
-            if (running_apps_db.hasOwnProperty(twoAppName) ) {
-                unusedAppsExist = true;
-                //onsole.log("unclosed dbs are "+twoAppName+" diff "+((running_apps_db[twoAppName] && running_apps_db[twoAppName].last_access)? (new Date().getTime() - running_apps_db[twoAppName].last_access ): "no last acces") )
-            }
-        }
+
+// Background - Mongo specific Utilities
+const get_real_object_id = function (data_object_id) {
+    var real_id=data_object_id;
+    if (typeof data_object_id=="string") {
+      try {
+        real_id = new ObjectID(data_object_id);
+    } catch(e) {
+        //console.warn("Could not get mongo real_id - using text id for "+data_object_id)
     }
-    clearTimeout(autoCloseTimeOut);
-    if (unusedAppsExist) autoCloseTimeOut = setTimeout(exports.closeUnusedApps,30000);
+  }
+  return real_id
+}
+const full_name = function (appcollowner) {
+  //onsole.log("full_name appcollowner ", appcollowner)
+  if (!appcollowner) throw helpers.error("Mongo collection failure - need appcollowner ")
+  const app_table = appcollowner.app_table || (appcollowner.app_name + (appcollowner.collection_name? ("_"+appcollowner.collection_name):"" ))
+  //onsole.log("full_name appcollowner  app_table: "+ appcollowner.app_table + " app_name :"+appcollowner.app_name+" coll: "+appcollowner.collection_name)
+  if (!app_table || !appcollowner.owner) throw helpers.error("NEDB collection failure - need app name and an owner for "+appcollowner.owner+"__"+appcollowner.app_name+"_"+appcollowner.collection_name)
+  return (appcollowner.owner+"__"+app_table)
+}
+const get_coll = function(env_params, appcollowner, callback) {
+  //onsole.log("get_coll in get_coll",appcollowner)
+  db_name = full_name(appcollowner)
+  if (running_apps_db[db_name] && running_apps_db[db_name].db) {
+    callback(null, running_apps_db[db_name].db);
+  } else {
+    if (!running_apps_db[db_name]) running_apps_db[db_name]={'db':null, 'last_accessed':null};
+    running_apps_db[db_name].last_access = new Date().getTime();
+
+    async.waterfall([
+        // 1. open database connection
+        function (cb) {
+          if (freezrdb) {
+            cb (null, null)
+          } else {
+            MongoClient.connect(dbConnectionString(env_params, db_name), cb);
+          }
+        },
+        // 2. create collections for users, installed_app_list, user_installed_app_list, user_devices, permissions.
+        function (theclient, cb) {
+          if (!freezrdb) freezrdb = theclient.db(theclient.s.options.dbName)
+          freezrdb.collection(db_name, cb);
+        }
+    ], function(err, collection) {
+        if (err) console.warn("error getting "+db_name+" in get_coll")
+        running_apps_db[db_name].db = collection;
+        callback(err, collection);
+    });
+  }
+}
+const dbConnectionString = function(env_params, dbName) {
+  const DEFAULT_UNIFIED_DB_NAME = "freezrdb"
+  const db_name = (env_params.dbParams && env_params.dbParams.unifiedDbName)? env_params.dbParams.unifiedDbName:DEFAULT_UNIFIED_DB_NAME
+  var connectionString = ""
+  /*
+  if (env_params && env_params.dbParams && env_params.dbParams.host && env_params.dbParams.host=="localhost"  ) {
+    return 'localhost/'+db_name;
+  } else
+  */
+  if (env_params && env_params.dbParams) {
+    if (env_params.dbParams.connectionString) {
+      return env_params.dbParams.connectionString
+    } else {
+      connectionString+= 'mongodb://'
+      if (env_params.dbParams.user) connectionString+= env_params.dbParams.user + ":"+env_params.dbParams.pass + "@"
+      connectionString += env_params.dbParams.host + ":" + (env_params.dbParams.host == "localhost"? "" : env_params.dbParams.port)
+      connectionString += "/"+ db_name  +(env_params.dbParams.addAuth? '?authSource=admin':'');
+      return connectionString
+    }
+  } else {
+    console.warn("ERROR - NO DB HOST")
+    return null;
+  }
 }

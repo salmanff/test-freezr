@@ -44,11 +44,11 @@ var runQuery = function(options) {
   options = options || {};
   options.app_name = 'info.freezr.admin';
   options.collection = 'visit_log_daysum';
-  options.query_params = options.query_params || {};
-  options.query_params = {$and: [{'_date_modified':{$lt:(shownData.last_date.getTime())}},{'_date_modified':{$gt:(shownData.last_date.getTime()-(MAX_COLS*24*60*60*1000))}}]}
+  options.q = options.q || {};
+  options.q = {$and: [{'_date_modified':{$lt:(shownData.last_date.getTime())}},{'_date_modified':{$gt:(shownData.last_date.getTime()-(MAX_COLS*24*60*60*1000))}}]}
   options.sort ={'_date_modified': -1}
   options.count=MAX_COLS;
-  freezr.db.query(options, function(ret){
+  freezr.feps.postquery(options, function(ret){
     //onsole.log(ret);
     ret = JSON.parse(ret)
     ret.results.forEach((anItem) => {

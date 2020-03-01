@@ -570,17 +570,17 @@ exports.dbquery = function(req,res) {
   helpers.log (req,("dbquery :"+JSON.stringify (req.body)));
   // need req.params.collection_name and req.body..
   const appcollowner = {
-    app_name:'info_freezer_admin',
+    app_name:'info_freezr_admin',
     collection_name:req.params.collection_name,
-    owner:'freezr_admin'
+    owner:'fradmin'
   }
-  const query = req.body.query_params || {};
+  const query = req.body.q || {};
 
   // check app token
   let checks = {user_id: req.session.user_id, logged_in:true, requestor_app:"info.freezr.admin"}
   db_handler.check_app_token_and_params(req, checks, function(err, user_id, requestor_app, logged_in) {
     db_handler.query (req.freezr_environment, appcollowner,
-      req.body.query_params,
+      req.body.q,
       {   count: req.body.count,
           skip:  req.body.skip
       },
@@ -629,9 +629,9 @@ function add_user (env_params, valid_unique_user_id, password, valid_email, full
                 deleted: false
             };
             const appcollowner = {
-              app_name:'info_freezer_admin',
+              app_name:'info_freezr_admin',
               collection_name:"users",
-              owner:'freezr_admin'
+              owner:'fradmin'
             }
             db_handler.create (env_params, appcollowner, null, write, null, cb)
         }
@@ -654,14 +654,14 @@ const list_all_oauths = function (req, res) {
     console.log("************ O_OATH NOT ERROR CHECKED SINCE V 0.0.122 (list_all_oauths) *****************")
 
     const appcollowner = {
-      app_name:'info_freezer_admin',
+      app_name:'info_freezr_admin',
       collection_name:"oauth_permissions",
-      owner:'freezr_admin'
+      owner:'fradmin'
     }
     db_handler.query(env_params, appcollowner, null,
       { count: req.body.count,
         skip:  req.body.skip,
-        query_params: {enabled:true}
+        q: {enabled:true}
       }, (err, results) => {
         if (err) {
             helpers.send_internal_err_failure(res, "admin_handler", exports.version,"list_all_oauths","failure to get all user list - "+err);
@@ -684,9 +684,9 @@ exports.oauth_perm_make = function (req, res) {
     var update=null;
     var is_update = req.body._id? true:false;
     const appcollowner = {
-      app_name:'info_freezer_admin',
+      app_name:'info_freezr_admin',
       collection_name:"oauth_permissions",
-      owner:'freezr_admin'
+      owner:'fradmin'
     }
 
     async.waterfall([
@@ -853,9 +853,9 @@ var clearStatesTimeOut = function() {
 var get_auth_permission = function (env_params, params, callback) {
   // { source: req.query.source, type: req.body.type, name: req.body.name }
   const appcollowner = {
-    app_name:'info_freezer_admin',
+    app_name:'info_freezr_admin',
     collection_name:"oauth_permissions",
-    owner:'freezr_admin'
+    owner:'fradmin'
   }
   db_handler.query(env_params, appcollowner,
       {source: params.source, type: params.type, name: params.name }, {}, callback)

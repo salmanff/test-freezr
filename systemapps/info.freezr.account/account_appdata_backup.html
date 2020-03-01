@@ -35,7 +35,13 @@ options:
 <div id="upload_area">
   <div class="freezer_dialogueTitle" >Restore</div>
   Note that restoring doesn't work with files at this point. Also, cross referencing _id's of different collections is not stable. Manual id's are automatically added. _id's which are not specified by the app are currently ignored.<br/>
-  <form id="uploadForm"><input type="file" id="fileUploader" name="files[]" multiple /></form>
+  <form id="uploadForm">
+    <br/>
+    <input type="file" id="fileUploader" name="files[]" multiple />
+    <br/>
+    <br/>
+    <input type="checkbox" name="keepId" id="keepIdEl" value="keepId">Keep id?
+  </form>
   <div id="uploadAndRestoreData">Restore data by uploading file</div>
 </div>
 

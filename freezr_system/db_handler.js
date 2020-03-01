@@ -24,29 +24,29 @@ const ARBITRARY_COUNT = 200;
 
 // apc = appcollowner
 const PERMISSION_APC = {
-  app_name:'info_freezer_admin',
+  app_name:'info_freezr_admin',
   collection_name:'permissions',
-  owner:'freezr_admin'
+  owner:'fradmin'
 }
 const PARAMS_APC = {
-  app_name:'info_freezer_admin',
+  app_name:'info_freezr_admin',
   collection_name:'params',
-  owner:'freezr_admin'
+  owner:'fradmin'
 }
 const USERS_APC = {
-  app_name:'info_freezer_admin',
+  app_name:'info_freezr_admin',
   collection_name:'users',
-  owner:'freezr_admin'
+  owner:'fradmin'
 }
 const APPLIST_APC = {
-  app_name:'info_freezer_admin',
+  app_name:'info_freezr_admin',
   collection_name:'installed_app_list',
-  owner:'freezr_admin'
+  owner:'fradmin'
 }
 const OAUTHPERM_APC = {
-  app_name:'info_freezer_admin',
+  app_name:'info_freezr_admin',
   collection_name:"oauth_permissions",
-  owner:'freezr_admin'
+  owner:'fradmin'
 }
 
 // INITIALISING
@@ -67,13 +67,12 @@ exports.re_init_environment_sync = function(env_params)  {
                 console.warn("**** **** got err in re_init_freezr_environment **** ****")
                 return helpers.state_error("db_handler",exports.version,"re_init_freezr_environment", ("error reading file "+file_env_name+" - "+e.message), "error_in_custom_file")
             }
-            if (env_okay) custom_environment.re_init_environment_sync(env_params);
+            if (env_okay && custom_environment.re_init_environment_sync) custom_environment.re_init_environment_sync(env_params);
         } else {
             console.warn("file doen't exist "+'freezr_system/environment/'+file_env_name)
         }
     } else {
         custom_environment=null;
-        db_default_mongo.re_init_environment_sync(env_params)
     }
 }
 exports.re_init_freezr_environment = function(env_params, callback)  {
@@ -93,18 +92,43 @@ exports.re_init_freezr_environment = function(env_params, callback)  {
                 console.warn("got err in re_init_freezr_environment")
                 callback(helpers.state_error("db_handler",exports.version,"re_init_freezr_environment", ("error reading file "+file_env_name+" - "+e.message), "error_in_custom_file") )
             }
-            if (env_okay) custom_environment.re_init_freezr_environment(env_params, callback);
+            if (env_okay) {
+              if (custom_environment.re_init_freezr_environment){
+                custom_environment.re_init_freezr_environment(env_params, callback);
+              } else {
+                callback(null)
+              }
+            }
         } else {
             console.warn("file doen't exist "+'freezr_system/environment/'+file_env_name)
+            callback(helpers.state_error("db_handler",exports.version,"re_init_freezr_environment", ("file doen't exist "+'freezr_system/environment/'+file_env_name), "error_in_custom_file") )
         }
     } else {
         custom_environment=null;
-        db_default_mongo.re_init_freezr_environment(env_params, callback)
+        callback(null)
     }
 }
 exports.check_db      = function(env_params, callback) {
-  // checks that the db is functioning and returns a copy of the freezr_environment if there is one on the db
-    dbToUse(env_params).check_db(env_params,callback);
+  const appcollowner = {
+    app_name:'info_freezr_admin',
+    collection_name : 'params',
+    owner: 'fradmin'
+  }
+  let env_on_db=null;
+
+  dbToUse(env_params).read_by_id(env_params, appcollowner, "freezr_environment", function(err, env_on_db) {
+    dbToUse(env_params).read_by_id(env_params, appcollowner, "test_write_id", (err2, savedData) => {
+      if (err || err2) {
+        console.warn("got err in check_db ",(err? err : err2))
+        callback((err? err : err2), env_on_db);
+      } else if (savedData){
+        exports.update (env_params, appcollowner, "test_write_id", {'foo':'updated bar'}, {replaceAllFields:false},
+          (err, ret)=> callback(err, env_on_db))
+      } else {
+        dbToUse(env_params).create (env_params, appcollowner, "test_write_id", {'foo':'bar'}, null, (err, ret)=> callback(err, env_on_db))
+      }
+    });
+  })
 }
 var useCustomEnvironment = function(env_params, app_name) {
     //onsole.log("useCustomEnvironment: env_params "+JSON.stringify(env_params))
@@ -138,8 +162,9 @@ exports.create = function (env_params, appcollowner, id, entity, options, cb) {
   // assumes appcollowner is fully checked and valid
   // issues will indicate specific non critical errors etc (todo)
   // only inserts one entity at a time
+  // options are restore_record: true
   appcollowner = remove_appcollowner_dots(appcollowner)
-  if (!options || !options.restoreRecord){
+  if (!options || !options.restore_record){
     if (!options || !options.keepReservedFields) helpers.RESERVED_FIELD_LIST.forEach((aReservedField) => delete entity[aReservedField] )
     entity._date_created  = new Date().getTime();
     entity._date_modified = new Date().getTime();
@@ -167,36 +192,94 @@ exports.query = function(env_params, appcollowner, idOrQuery={}, options, callba
   }
 }
 exports.update = function (env_params, appcollowner, idOrQuery, updates_to_entity,
-  options={replaceAllFields:false}, cb) {
+  options={replaceAllFields:false}, callback) {
   // assumes rights to make the update and that appcollowner is well formed
   // IMPORTANT: db_update cannot insert new entities - just update existign ones
     // options: replaceAllFields - replaces all object rather than specific keys
     // In replaceAllFields: dbtoUse needs to take _date_created from previous version and add it here
     // if old_entity is specified then it is done automatically... this assumes system generates the old_entity, not the user
+  // restore_record: true
 
-  updates_to_entity._date_modified = new Date().getTime();
-  if (typeof idOrQuery == "string") itemId = idOrQuery+"";
-  delete updates_to_entity._date_created
-  delete updates_to_entity._id
+  //onsole.log("db_handler options",options)
   appcollowner = remove_appcollowner_dots(appcollowner)
-  dbToUse(env_params).update(env_params, appcollowner, idOrQuery, updates_to_entity, options={}, function(err, ret) {
-    if (err || !ret) {
-      cb (err, null)
-    //} else if (ret === 0) { // todo use database specific controls here
-    //  cb (null, null) //
+
+  const uses_record_id = (typeof idOrQuery == "string" && idOrQuery.length>0)
+  //const find = uses_record_id? {_id: idOrQuery }: idOrQuery;
+
+  if (options.replaceAllFields) {
+    if (options.old_entity) { // assumes system has found old_entity and so skip one extra find
+      const entity_id = (typeof idOrQuery == "string")? idOrQuery : options.old_entity._id
+      helpers.RESERVED_FIELD_LIST.forEach(key => {
+        if (options.old_entity[key]) updates_to_entity[key] = options.old_entity[key]}
+      )
+      delete updates_to_entity._id
+      updates_to_entity._date_modified = new Date().getTime();
+      dbToUse(env_params).replace_record_by_id(env_params, appcollowner, entity_id, updates_to_entity, (err, result)=>{
+        let returns = err? null : {
+            nModified: result.nModified,
+            _id: options.old_entity._id,
+            _date_created: options.old_entity._date_created,
+            _date_modified: updates_to_entity._date_modified
+        }
+        callback(err, returns)
+      });
     } else {
-      cb (null, {'_date_modified':updates_to_entity._date_modified, "_id":itemId, 'nModified':ret})
+      exports.query(env_params, appcollowner, idOrQuery, {}, (err, entities) => {
+        if (!entities || entities.length==0) {
+           callback(null, {nModified:0, n:0}) // todo make nModified consistent
+        } else {
+           let old_entity = entities[0];
+           const entity_id = old_entity._id
+           if (!options.restore_record) {
+             helpers.RESERVED_FIELD_LIST.forEach(key => {
+               if (old_entity[key]) updates_to_entity[key] = old_entity[key]}
+             )
+          }
+           delete updates_to_entity._id
+           updates_to_entity._date_modified = new Date().getTime();
+           dbToUse(env_params).replace_record_by_id(env_params, appcollowner, entity_id, updates_to_entity, (err, result)=> {
+             let returns = err? null : {
+                 nModified: result,
+                 _id: entity_id,
+                 _date_created: old_entity._date_created,
+                 _date_modified: updates_to_entity._date_modified
+             }
+             if(entities.length>1) {
+               returns.more=true;
+               returns.flags="More than one object retrieved - first object changed"
+               console.warn("More than One object retrieved when updating with replaceAllFields ",find)
+             }
+             callback(err, returns)
+           })
+         }
+      })
     }
-  });
+  } else {  //if (!options.replaceAllFields)
+    // todo - keeping default mongo return params pendign ceps definition
+    if (!options.newSystemParams) helpers.RESERVED_FIELD_LIST.forEach(key => delete updates_to_entity[key])
+    updates_to_entity._date_modified = new Date().getTime();
+    dbToUse(env_params).update_multi_records(env_params, appcollowner, idOrQuery, updates_to_entity, options, callback);
+  }
 }
-exports.delete_record = function (env_params, appcollowner, idOrQuery, options, cb) {
+function updateFromOld(old_entity, updates_to_entity) {
+  // note - must make sure system has remvoed RESERVED_FIELD_LIST
+  for (let key in updates_to_entity) {
+   if (updates_to_entity.hasOwnProperty(key)) {
+     old_entity[key] = updates_to_entity[key]
+   }
+ }
+ delete old_entity._id;
+ return old_entity
+}
+
+exports.delete_record = function (env_params, appcollowner, idOrQuery, options, callback) {
     // No options at this point - reserved for future
     // Removes one or multiple items
     appcollowner = remove_appcollowner_dots(appcollowner)
-    dbToUse(env_params).delete_record(env_params, appcollowner, idOrQuery, options, cb);
+    dbToUse(env_params).delete_record(env_params, appcollowner, idOrQuery, options, callback);
 }
 
-exports.upsert = function (env_params, appcollowner, idOrQuery, entity, cb) {
+exports.upsert = function (env_params, appcollowner, idOrQuery, entity, callback) {
   // If multiple entites, only updates the first!! Does not work with multiple entities
   //onsole.log("db_handler.upsert")
 
@@ -213,7 +296,7 @@ exports.upsert = function (env_params, appcollowner, idOrQuery, entity, cb) {
                   (idOrQuery && idOrQuery._id)? (idOrQuery._id+"") : null
                 )
       exports.create(env_params, appcollowner, id, entity, null, (err, result)=>{
-        cb(err, ((result && result.entity)? result.entity : null))
+        callback(err, ((result && result.entity)? result.entity : null))
       })
     } else  {
       if (Array.isArray(existing_entity)) {
@@ -221,7 +304,9 @@ exports.upsert = function (env_params, appcollowner, idOrQuery, entity, cb) {
       }
       delete entity._id;
       idOrQuery = existing_entity._id+""
-      dbToUse(env_params).update(env_params, appcollowner, idOrQuery, entity, {replaceAllFields:true}, cb)
+      exports.update (env_params, appcollowner, idOrQuery, entity,
+        options={replaceAllFields:true, old_entity:existing_entity },
+        callback)
         // todo if returns nmodified==0, then throw error
     }
   };
@@ -234,9 +319,9 @@ exports.upsert = function (env_params, appcollowner, idOrQuery, entity, cb) {
   }
 }
 
-exports.getAllCollectionNames= function (env_params, app_name, callback) {
+exports.getAllCollectionNames= function (env_params, user_id, app_name, callback) {
   app_name = app_name.replace(/\./g,"_")
-  dbToUse(env_params).getAllCollectionNames (env_params, app_name, callback)
+  dbToUse(env_params).getAllCollectionNames (env_params, user_id, app_name, callback)
 }
 
 //CUSTOM ENV AND  ENV ACTIONS (ie SET UP etc)
@@ -273,7 +358,9 @@ exports.get_or_set_prefs = function (env_params, prefName, prefsToSet, doSet, ca
     }
   })
 }
-exports.set_and_nulify_environment = function(env_params)  {dbToUse(env_params).set_and_nulify_environment(env_params) }
+exports.set_and_nulify_environment = function(env_params)  {
+  if (dbToUse(env_params).set_and_nulify_environment) dbToUse(env_params).set_and_nulify_environment(env_params)
+}
 exports.write_environment = function(env_params, callback)  {
       // todo - write to collection of env and so keep a list of all envs for later review
       exports.upsert(env_params, PARAMS_APC, "freezr_environment", {params:env_params}, (err, write_result) =>{
@@ -288,7 +375,7 @@ exports.user_by_user_id = function (env_params, user_id, callback) {
     if (!user_id)
         callback(helpers.missing_data("user_id", "db_handler", exports.version, "user_by_user_id"));
     else
-      admin_obj_by_unique_field (env_params, "info_freezer_admin","users", "user_id", exports.user_id_from_user_input(user_id), callback);
+      admin_obj_by_unique_field (env_params, "info_freezr_admin","users", "user_id", exports.user_id_from_user_input(user_id), callback);
 };
 exports.all_users = function (env_params, callback) {
   exports.query(env_params, USERS_APC, null, {count:ARBITRARY_COUNT}, callback)
@@ -330,7 +417,7 @@ function admin_obj_by_unique_field (env_params, app_name, collection_name, field
     const appcollowner = {
       app_name:app_name,
       collection_name:collection_name,
-      owner:'freezr_admin'
+      owner:'fradmin'
     }
     exports.query(env_params, appcollowner, query, {}, (err, results) => {
         if (err) {
@@ -358,7 +445,7 @@ exports.set_or_update_user_device_code = function (env_params, device_code, user
     user_agent:user_agent
   }
   const appcollowner = {
-    app_name:'info_freezer_admin',
+    app_name:'info_freezr_admin',
     collection_name:'user_devices',
     owner:user_id
   }
@@ -377,9 +464,9 @@ exports.set_or_update_user_device_code = function (env_params, device_code, user
 
 // app_tokens
 const APP_TOKEN_APC = {
-  app_name:'info_freezer_admin',
+  app_name:'info_freezr_admin',
   collection_name:'app_tokens',
-  owner:'freezr_admin'
+  owner:'fradmin'
 }
 let TOKEN_CACHE = {}
 const EXPIRY_DEFAULT = 30*24*60*60*1000 //30 days
@@ -474,7 +561,7 @@ exports.get_app_token_onetime_pw_and_update_params = function(env_params, device
         changes = {}
         if (params.expiry) changes.expiry = params.expiry
         if (params.one_device || params.one_device===false) changes.one_device =  params.one_device;
-        exports.update (env_params, APP_TOKEN_APC, record._id+"", changes, {},function(err, results) {
+        exports.update (env_params, APP_TOKEN_APC, (record._id+""), changes, {replaceAllFields:false},function(err, results) {
             if (err) {callback(err)} else {callback(null, record.app_token)}
           })
       }
@@ -504,7 +591,7 @@ exports.get_app_token_record_using_pw_and_mark_used = function(env_params, sessi
       } else {
         let expires_in = results[0].expiry;
         if (expiry && expiry<expires_in) expires_in = expiry
-        exports.update (env_params, APP_TOKEN_APC, record._id+"",
+        exports.update (env_params, APP_TOKEN_APC, (record._id+""),
           {date_used:(new Date().getTime()), user_device:session_device_code, expiry:expires_in}, null,function(err, results) {
             if (err) {callback(err)} else {callback(null, record.app_token, expires_in)}
           })
@@ -661,7 +748,7 @@ exports.add_app = function (env_params, app_name, app_display_name, user_id, cal
 
         // 2. see if app already exists
         function (cb) {
-            admin_obj_by_unique_field(env_params, "info_freezer_admin","installed_app_list", "app_name",app_name, cb);
+            admin_obj_by_unique_field(env_params, "info_freezr_admin","installed_app_list", "app_name",app_name, cb);
         },
 
         // 3. stop if app already exists
@@ -711,7 +798,7 @@ exports.all_user_apps = function (env_params, user_id, skip, count, callback) {
         callback(helpers.missing_data("User id", "db_handler", exports.version,"all_user_apps"))
     } else {
         const appcollowner = {
-          app_name:'info_freezer_admin',
+          app_name:'info_freezr_admin',
           collection_name:'user_installed_app_list',
           owner:user_id
         }
@@ -725,7 +812,7 @@ exports.remove_user_app = function (env_params, user_id, app_name, callback){
     //onsole.log("removing app  for "+user_id+" app "+app_name);
     const req_id = user_id+'}{'+app_name
     const appcollowner = {
-      app_name:'info_freezer_admin',
+      app_name:'info_freezr_admin',
       collection_name:'user_installed_app_list',
       owner:user_id
     }
@@ -745,7 +832,7 @@ exports.mark_app_as_used = function (env_params, user_id, app_name, callback){
     } else {
       const rec = {app_name: app_name, user_id:user_id,removed: false}
       const appcollowner = {
-        app_name:'info_freezer_admin',
+        app_name:'info_freezr_admin',
         collection_name:'user_installed_app_list',
         owner:user_id
       }
@@ -760,7 +847,7 @@ exports.remove_user_records = function (env_params, user_id, app_name, callback)
     async.waterfall([
         // 1. get all collection names
         function (cb) {
-            exports.getAllCollectionNames(env_params, app_name, cb);
+            exports.getAllCollectionNames(env_params, user_id, app_name, cb);
         },
 
         // 2. for all colelctions, delete user data
@@ -886,7 +973,7 @@ exports.try_to_delete_app = function (env_params, logged_in_user, app_name, call
     });
 }
 exports.get_app_info_from_db = function (env_params, app_name, callback) {
-    admin_obj_by_unique_field (env_params, "info_freezer_admin","installed_app_list", "app_name", app_name, function (dummy, obj_returned){
+    admin_obj_by_unique_field (env_params, "info_freezr_admin","installed_app_list", "app_name", app_name, function (dummy, obj_returned){
         callback(null, obj_returned);
     });
 }
@@ -946,9 +1033,7 @@ exports.updatePermission = function(env_params, oldPerm, action, newPerms, callb
     // Note user_id, requestor_app, requestee_app_table, permission_name Already verified to find the right record.
     // action can be null, "Accept" or "Deny"
     //
-    //onsole.log("updatePermission "+action)
-    //onsole.log("updatePermission old"+JSON.stringify(oldPerm))
-    //onsole.log("updatePermission new "+JSON.stringify(newPerms))
+    //onsole.log("updatePermission "+action, oldPerm, newPerms)
 
     if (!oldPerm || !oldPerm._id || (action=="Accept" && !newPerms ) ) {
         callback(helpers.missing_data("permission data", "db_handler", exports.version, "updatePermission"))
@@ -965,8 +1050,10 @@ exports.updatePermission = function(env_params, oldPerm, action, newPerms, callb
 
         newPerms.permitter = oldPerm.permitter
 
+        //onsole.log("db handler going to update ",newPerms)
+
         exports.update (env_params, PERMISSION_APC,
-          {_id: oldPerm._id+""},  //idOrQuery,
+          (oldPerm._id+""),  //idOrQuery,
           newPerms, // updates_to_entity
           {replaceAllFields:true},
           callback)
@@ -1062,7 +1149,7 @@ var queryParamsArePermitted = function(query, permitted_fields) {
 }
 exports.queryIsPermitted = function(user_permission, query_schema, specific_params) {
     //// Permissions are held specifically for each users... so they actual permission given needs to be compared to the one in the app_config
-    // specific params come from the body (query_params)
+    // specific params come from the body (q (query params))
     //onsole.log("queryIsPermitted userpermission" + JSON.stringify(user_permission) );
     //onsole.log("queryIsPermitted query_schema" +JSON.stringify(query_schema))
     //onsole.log("queryIsPermitted specific_params" +JSON.stringify(specific_params))
@@ -1070,7 +1157,7 @@ exports.queryIsPermitted = function(user_permission, query_schema, specific_para
     if (!specific_params.count) specific_params.count = user_permission.max_count;
     if (!specific_params.skip) specific_params.skip = 0;
     return objectsAreSimilar(fields_for_checking_query_is_permitted, user_permission,query_schema)
-        && queryParamsArePermitted(specific_params.query_params,user_permission.permitted_fields)
+        && queryParamsArePermitted(specific_params.q,user_permission.permitted_fields)
         && (!user_permission.max_count || (specific_params.count + specific_params.skip <= user_permission.max_count));
 }
 exports.fieldNameIsPermitted = function(requested_permission, permission_schema, field_name) {
@@ -1261,11 +1348,11 @@ exports.admindb_query = function (collection, options, callback) {
 
     options = options || {};
     const appcollowner = {
-      app_name:'info_freezer_admin',
+      app_name:'info_freezr_admin',
       collection_name:collection,
-      owner:'freezr_admin'
+      owner:'fradmin'
     }
-    exports.query(env_params, appcollowner, options.query_params, {skip:(options.skip? options.skip: 0), count: (options.count? options.count:ARBITRARY_COUNT)}, callback)
+    exports.query(env_params, appcollowner, options.q, {skip:(options.skip? options.skip: 0), count: (options.count? options.count:ARBITRARY_COUNT)}, callback)
 };
 
 // OTHER / OAUTH / MOVE TO ADMIN_DB

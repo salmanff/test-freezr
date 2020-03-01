@@ -11,6 +11,8 @@ var dl = {  'meta': { 'user':null,
 					},
 		  	'current_collection':{
 			  	'num':0,
+					'retrieved':0,
+					'retrieved_all':false,
 			  	'rowsShown':0,
 			  	'name':null,
 				'fields':[
@@ -27,6 +29,7 @@ freezr.initPageScripts = function() {
 	document.getElementById("toptitle").onclick = function() {window.open("/apps/"+app_name,"_self");}
 	document.getElementById("gotoBackUp").onclick = function() { window.open("/account/appdata/"+app_name+"/backup","_self");}
 	document.getElementById("saveData").onclick = function () {saveData();}
+	document.getElementById("getCollectionData").onclick = function() {getCollectionData();}
 	document.getElementById("retrieve_more").onclick = function() {retrieve_more();}
 	document.getElementById("collection_names").onchange = function() {change_collection();}
 
@@ -38,11 +41,10 @@ freezr.initPageScripts = function() {
 			showWarning("Error connecting to server");
 		} else {
 			configReturn = freezr.utils.parse(configReturn);
-			//onsole.log(configReturn);
 			dl.meta.all_collection_names = configReturn.collection_names;
 			dl.meta.app_config = configReturn.app_config;
-			dl.meta.num_collections_retrieved = 0;
-			dl.collections=[];
+			dl.meta.current_collection_num = 0
+			dl.meta.num_points_retrieved = 0;
 			if (dl.meta.all_collection_names && dl.meta.all_collection_names.length>0) {
 				var coll_list = document.getElementById("collection_names");
 				coll_list.innerHTML="";
@@ -50,7 +52,6 @@ freezr.initPageScripts = function() {
 				dl.meta.all_collection_names.forEach(function (aColl) {
 					coll_list.innerHTML+="<option value='"+(collNum++)+"'>"+aColl+"</option>";
 				})
-				getCollectionData();
 			} else {
 				showWarning("No data collections in this app");
 				document.getElementById('retrieve_more').style.display = "none";
@@ -62,29 +63,55 @@ freezr.initPageScripts = function() {
 		}
 	});
 }
-var getCollectionData = function () {
-	//onsole.log("to get next coll "+dl.meta.num_collections_retrieved+"-"+dl.meta.all_collection_names.length+" "+JSON.stringify(dl.meta));
-	if (dl.meta.num_collections_retrieved < dl.meta.all_collection_names.length) {
-		freezr.db.query(
-			{app_name:app_name, collection:dl.meta.all_collection_names[dl.meta.num_collections_retrieved], count:retrieve_COUNT , skip:0 },
-			  gotCollectionData)
-	} else {
-		showCollectionData();
+// Chaning Collections and Getting More Data
+var change_collection = function() {
+	dl.current_collection = {
+		'num':document.getElementById("collection_names").value,
+		'retrieved':0,
+		'retrieved_all':false,
+		'rowsShown':0,
+		'name':null,
 	}
+}
+var getCollectionData = function () {
+	document.getElementById('table_wrap').style.display="block"
+	//onsole.log("to get next coll "+dl.current_collection.num+"-"+dl.meta.all_collection_names.length+" "+JSON.stringify(dl.meta));
+		freezr.feps.postquery(
+			{app_name:app_name, collection:dl.meta.all_collection_names[dl.current_collection.num], count:retrieve_COUNT , skip:dl.current_collection.retrieved },
+			  gotCollectionData)
 };
 var gotCollectionData = function (returnJson) {
-	//onsole.log("gotCollectionData "+JSON.stringify(returnJson));
+	//onsole.log("gotCollectionData ",returnJson);
 	returnJson = freezr.utils.parse(returnJson);
-	var retrieved_all = (returnJson.results && returnJson.results.length<retrieve_COUNT);
-	dl.collections.push( {'name':dl.meta.all_collection_names[dl.meta.num_collections_retrieved], 'data':returnJson.results, 'retrieved_all':retrieved_all });
-	dl.meta.num_collections_retrieved++;
-	getCollectionData();
+	if (!Array.isArray(returnJson) && returnJson.results) {returnJson = returnJson.results} // case of admin query
+	dl.current_collection.retrieved+=returnJson.length
+	dl.current_collection.retrieved_all = (returnJson && returnJson.length<retrieve_COUNT);
+	//dl.collections.push( {'name':dl.meta.all_collection_names[dl.meta.current_collection_num], 'data':returnJson, 'retrieved_all':retrieved_all });
+	//dl.meta.num_collections_retrieved++;
+	showCollectionData(returnJson)
+	//getCollectionData();
 }
-var showCollectionData = function(collection_num) {
-	if (!collection_num || collection_num==null ) {collection_num = dl.current_collection.num} else {dl.current_collection.num=collection_num};
-	dl.current_collection.name = dl.collections[collection_num].name;
 
+var retrieve_more = getCollectionData;
+/*
+var retrieve_more = function() {
+	freezr.db.query({ collection:dl.current_collection.name, count:retrieve_COUNT , skip:(dl.collections[dl.current_collection.num].data.length) }, gotMoreData)
+}
+var gotMoreData = function(returnJson) {
+	returnJson = freezr.utils.parse(returnJson);
+	var retrieved_all = (returnJson.results.length<retrieve_COUNT);
+	dl.collections[dl.current_collection.num].retrieved_all = retrieved_all;
+	dl.collections[dl.current_collection.num].data = dl.collections[dl.current_collection.num].data.concat(returnJson.results);
+	document.getElementById("retrieve_more").style.display = (dl.collections[dl.current_collection.num].retrieved_all)? "none":"block";
+	insertnextElements();
+}
+*/
+
+var showCollectionData = function(dataSet) {
+	dl.current_collection.name = dl.meta.all_collection_names[dl.current_collection.num];
 	dl.current_collection.rowsShown=0;
+
+	const collection_name = dl.meta.all_collection_names[dl.current_collection.num];
 
 	dl.current_collection.fields = {
 		'_id':{'cellLen':40},
@@ -92,16 +119,14 @@ var showCollectionData = function(collection_num) {
 		'_date_modified':{'cellLen':50, 'type':'date'},
 	}
 
-
-	var dataSet = dl.collections[collection_num].data;
 	if (dataSet && dataSet.length>0){
 		dataSet.forEach(function(dataRow) {
 			for (var key in dataRow ) {
-				if (dataRow.hasOwnProperty(key) && key!="_creator") {
+				if (dataRow.hasOwnProperty(key) && key!="_owner") {
 					if (!dl.current_collection.fields[key]) {
 						dl.current_collection.fields[key]= {'cellLen':10};
-						if (dl.meta.app_config && dl.meta.app_config.collections && dl.meta.app_config.collections[dl.collections[collection_num].name] && dl.meta.app_config.collections[dl.collections[collection_num].name].field_names && dl.meta.app_config.collections[dl.collections[collection_num].name].field_names[key] && dl.meta.app_config.collections[dl.collections[collection_num].name].field_names && dl.meta.app_config.collections[dl.collections[collection_num].name].field_names[key].type  ) {
-							dl.current_collection.fields[key].type = dl.meta.app_config.collections[dl.collections[collection_num].name].field_names[key].type+"";
+						if (dl.meta.app_config && dl.meta.app_config.collections && dl.meta.app_config.collections[collection_name] && dl.meta.app_config.collections[collection_name].field_names && dl.meta.app_config.collections[collection_name].field_names[key] && dl.meta.app_config.collections[collection_name].field_names && dl.meta.app_config.collections[collection_name].field_names[key].type  ) {
+							dl.current_collection.fields[key].type = dl.meta.app_config.collections[collection_name].field_names[key].type+"";
 						}
 					}
 					var maxLen =  dl.current_collection.fields[key].type=="date"? 70 : ( dataRow [key]?  (((dataRow [key].length)>100)? 300: ((dataRow [key].length)>40? 200: ( (dataRow [key].length)>10? 100: 50  )   )  ) : 50 );
@@ -130,18 +155,12 @@ var showCollectionData = function(collection_num) {
 	document.getElementById("retrieve_more").style.width = Math.min(totalWidth,window.innerWidth)+"px";
 	document.getElementById("collection_sheet").innerHTML=tempText;
 
-	insertnextElements();
-}
-
-var insertnextElements = function() {
 	//onsole.log("insert next"+dl.collections[dl.current_collection.num].data.length);
-	if (dl.collections[dl.current_collection.num].data && dl.current_collection.rowsShown<dl.collections[dl.current_collection.num].data.length) {
+	dataSet.forEach(dataRow => {
 		var tempText = "";
-		var dataRow = dl.collections[dl.current_collection.num].data[dl.current_collection.rowsShown];
 		for (var key in dl.current_collection.fields ) {
 			if (dl.current_collection.fields.hasOwnProperty(key)) {
 				var cellContent = dataRow[key]?  (dl.current_collection.fields[key].type=="date"?freezr.utils.longDateFormat(  dataRow[key]) : JSON.stringify(dataRow[key])) : " - ";
-
 				tempText+= "<div class='div-table-col' style='width:"+ dl.current_collection.fields[key].cellLen+"px' >"+(cellContent)+"</div>"
 			}
 		}
@@ -151,27 +170,12 @@ var insertnextElements = function() {
 		rowEl.innerHTML = tempText;
 		document.getElementById("collection_sheet").appendChild(rowEl);
 		dl.current_collection.rowsShown++;
-		insertnextElements();
-	} else {
-		document.getElementById("retrieve_more").style.display = (dl.collections[dl.current_collection.num].retrieved_all)? "none":"block";
-	}
+	})
+	document.getElementById("retrieve_more").style.display = (dl.current_collection.retrieved_all)? "none":"block";
 }
 
-// Chaning Collections and Getting More Data
-var change_collection = function() {
-	showCollectionData(document.getElementById("collection_names").value);
-}
-var retrieve_more = function() {
-	freezr.db.query({ collection:dl.current_collection.name, count:retrieve_COUNT , skip:(dl.collections[dl.current_collection.num].data.length) }, gotMoreData)
-}
-var gotMoreData = function(returnJson) {
-	returnJson = freezr.utils.parse(returnJson);
-	var retrieved_all = (returnJson.results.length<retrieve_COUNT);
-	dl.collections[dl.current_collection.num].retrieved_all = retrieved_all;
-	dl.collections[dl.current_collection.num].data = dl.collections[dl.current_collection.num].data.concat(returnJson.results);
-	document.getElementById("retrieve_more").style.display = (dl.collections[dl.current_collection.num].retrieved_all)? "none":"block";
-	insertnextElements();
-}
+
+
 
 // Save Data
 var saveData = function() {

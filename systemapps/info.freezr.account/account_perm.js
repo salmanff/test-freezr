@@ -11,7 +11,7 @@ freezr.initPageScripts = function() {
     } else if (evt.target.id && evt.target.id=="close_window") {
       window.close()
     } else if (evt.target.id && freezr.utils.startsWith(evt.target.id,"freezerperm_") && freezr.utils.startsWith(window.location.pathname,"/account/perms/") ) {
-      var parts = evt.target.id.split('_'); // freezerperm_{{requestee_app}}_{{permission_name}}_{{action}}
+      var parts = evt.target.id.split('_'); // freezerperm_{{requestee_app???}}_{{permission_name}}_{{action}}
       let details= {requestor_app:parts[1],requestee_app_table:parts[2],action:parts[3] }
       details.permission_name=parts.slice(4).join("_")
       changePermission(details, evt.target, changePermissionCallBack)

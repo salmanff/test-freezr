@@ -5,7 +5,7 @@ exports.version = '0.0.122';
 var async = require('async'),
     flags_obj = require("./flags_obj.js");
 
-exports.RESERVED_FIELD_LIST = ["_date_created", "_date_modified","_accessible_By","_publicid","_id", "_date_published","_date_accessibility_mod"];
+exports.RESERVED_FIELD_LIST = ["_id", "_date_created", "_date_modified","_accessible_By","_publicid","_date_published","_date_accessibility_mod"];
 exports.USER_DIRS = ["userfiles", "userapps", "userbackups"]
 
 exports.log = function(req, message) {
@@ -20,8 +20,15 @@ exports.log = function(req, message) {
         type_names: ["object_delegate", "db_query"], // used in getDataObject
     }
     var reserved_collection_names = ["field_permissions", "accessible_objects"]; // "files" s also reserved but can write to it
-    const RESERVED_IDS =["freezr_admin"]
+    const RESERVED_IDS =["fradmin"]
 
+    exports.is_system_app = function(app_name) {
+      ret = false;
+      exports.system_apps.forEach((item, i) => {
+        if (item==app_name || exports.startsWith(app_name,item)) ret = true
+      });
+      return ret;
+    }
     // note - App_name and user_id etc could have spaces but need to deCodeUri when in url
     exports.valid_app_name = function(app_name) {
         if (!app_name) return false;

@@ -296,9 +296,9 @@ exports.login_for_app_token = function (req, res){ // uses onetime password
 }
 
 const APP_TOKEN_APC = {
-  app_name:'info_freezer_admin',
+  app_name:'info_freezr_admin',
   collection_name:'app_tokens',
-  owner:'freezr_admin'
+  owner:'fradmin'
 }
 exports.logout_page = function (req, res) {
   // /account/logout
@@ -902,6 +902,7 @@ exports.changeNamedPermissions = function(req, res) {
 
         // 4. Make sure of validity and update permission record
         function (results, cb) {
+          console.log("changeNamedPermissions - resuylts",results)
           if (results.length == 0) {
             helpers.warning ("account_handler", exports.version, "changeNamedPermissions","SNBH - permissions should be recorded already via app_config set up");
             db_handler.create_query_permission_record(req.freezr_environment, req.session.logged_in_user_id, requestor_app, requestee_app_table, permission_name, schemad_permission, action, cb);
@@ -912,6 +913,7 @@ exports.changeNamedPermissions = function(req, res) {
             }
             // todo 2019 - to review: if DENY, need to remove permissions from all opbjects holding that permission
             if (schemad_permission && (action == "Accept" || action=="Deny" ) ) {
+              console.log("changeNamedPermissions - going to accept or deny:",action)
               db_handler.updatePermission(req.freezr_environment, results[0], action, schemad_permission, cb);
             } else if (action == "Deny" && results[0].outDated) {
               helpers.warning ("account_handler", exports.version, "changeNamedPermissions","ERR now REMOVED AS OUTDATED");
@@ -952,7 +954,7 @@ removeAllAccessibleObjects = function(env_params, user_id, requestor_app, reques
     // collections_affected => { collection1:[id1, id2] , collection2:[id3,id4] }
     //  get app_config and colelctions_affected addasunique (collections in app_config) //redundancy
     const accessibles_collection = {
-      app_name:'info_freezer_admin',
+      app_name:'info_freezr_admin',
       collection_name:"accessible_objects",
       owner:user_id
     }
@@ -981,8 +983,7 @@ removeAllAccessibleObjects = function(env_params, user_id, requestor_app, reques
             async.forEach(results, function (acc_obj, cb2) {
                 //onsole.log("setting "+acc_obj._id)
                 db_handler.update(env_params, accessibles_collection, (acc_obj._id+""),
-                    {granted:false, '_date_modified' : (new Date().getTime())},
-                    cb2);
+                     {granted:false},{replaceAllFields:false}, cb2);
                 },
                 function (err) {
                     if (err) {
@@ -1033,9 +1034,10 @@ removeAllAccessibleObjects = function(env_params, user_id, requestor_app, reques
                               }
                               idx = collections_affected[collection_name].indexOf(requestor_app+"/"+permission_name);
                               if (idx>=0) collections_affected[collection_name].splice(idx,1) // should always be the case
+
                               db_handler.update (req.freezr_environment, appcollowner, (anObject._id+""),
-                                   {'_date_modified' : (new Date().getTime())}, // updates_to_entity
-                                   {replaceAllFields:false}, // options
+                                   {_accessible_By:newAccessibleBy}, // updates_to_entity
+                                   {replaceAllFields:false, newSystemParams:true}, // options
                                    cb3);
                           }
                       },
