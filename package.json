@@ -4,7 +4,7 @@
   "version": "0.0.1",
   "private": true,
   "engines": {
-    "node": ">=8"
+    "node": "8.x,10.16"
   },
   "repository": "https://github.com/salmanff/freezr",
   "dependencies": {

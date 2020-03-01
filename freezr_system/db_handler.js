@@ -184,7 +184,7 @@ exports.query = function(env_params, appcollowner, idOrQuery={}, options, callba
     dbToUse(env_params).read_by_id(env_params, appcollowner, idOrQuery, function(err, object) {callback(err, (object? [object]:[]))})
   } else {
     let [err, well_formed] = [null, true] //todo fix // query_is_well_formed(idOrQuery)
-    if (well_formed) {
+    if (true || well_formed) {
       dbToUse(env_params).query(env_params, appcollowner, idOrQuery, options, callback)
     } else {
       callback(err)
