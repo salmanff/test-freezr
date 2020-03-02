@@ -50,7 +50,7 @@ exports.reloadDb = function (env_params, callback) {
   })
 }
 
-exports.record = function(req, env_params, prefs, options){
+exports.record = function(req, env_params, prefs, options={}){
 	//onsole.log("RECORD? "+get_app_name(req)+" "+req.originalUrl)
 	if (!prefs) console.warn("PREFS NOT DEFINED ********************")
 	if (prefs && prefs.log_visits) {
@@ -210,9 +210,7 @@ function addRecordToDailySummary(req, prefs, options) {
 		day_db_log[today][user_type].numAppFiles++
 	} else if (options.source == 'userDataAccessRights') {
 		var parts = req.originalUrl.split('?')[0].split("/");
-		if (parts[2]=="userfiles" ) {
-			day_db_log[today][user_type].numUserFiles++
-		} else if (parts[2]=="db") {
+		if (parts[2]=="db") {
 		  if (parts[3] == "upload") {
 		  		day_db_log[today][user_type].numFileUpload++
 		  } else if (parts[3] == "write") {
@@ -234,14 +232,17 @@ function addRecordToDailySummary(req, prefs, options) {
 			day_db_log[today][user_type].numpcard++
 		} else if (parts[2]=="pdbq" || parts[2]=="pobject") {
 				day_db_log[today][user_type].numpdb++
+		} else if (parts[2]=="userfiles" ) {
+			day_db_log[today][user_type].numUserFiles++
 		} else if (parts[2]=="publicfiles") {
 				if (!day_db_log[today][user_type].numPubFiles) day_db_log[today][user_type].numPubFiles=0;
 				day_db_log[today][user_type].numPubFiles++
 		} else if (parts[1]=="account" || parts[2]=="account" || parts[1]=="login"|| parts[2]=="admin") {
 			day_db_log[today][user_type].numpubadmin++
 		} else {
+      if (!day_db_log[today][user_type].unknowncat) day_db_log[today][user_type].unknowncat=0;
+      day_db_log[today][user_type].unknowncat++
 			console.warn("unknown addVersionNumber category", req.originalUrl,parts)
-			throw helpers.error("unknown addVersionNumber category")
 		}
 	} else if (options.source == 'requireAdminRights') {
 		day_db_log[today][user_type].numpubadmin++
@@ -270,13 +271,15 @@ function get_app_name(req, options) {
 
 	if (req.originalUrl.split('?')[0] == "/") return "root"
 	var parts = req.originalUrl.split('?')[0].split("/");
-	const PARTS2URLS =  ['app_files', 'apps', 'v1']
+  if (parts[2]=="userfiles") return parts[3].replace(/\./g,"_");
+	const PARTS2URLS =  ['app_files', 'apps', 'v1','feps','ceps']
 	const PARTS1URLS =  ['appdata', 'favicon.ico', 'ppage', 'papp', 'account', 'login', 'admin']
 
 	if (parts.length<2) return "account"
+
 	if (PARTS2URLS.indexOf (parts[1]) >-1 ) return parts[2].replace(/\./g,"_");
 	if (PARTS1URLS.indexOf (parts[1]) >-1 )  return parts[1].replace(/\./g,"_");
-	console.warn("NO APP: "+req.originalUrl+ " "+parts.length+" "+parts.join("P"))
+	console.warn("NO APP: "+req.originalUrl+ " "+parts.length+" "+parts.join(" - "))
 	return "unknown_error"
 }
 function get_external_referer(req) {
