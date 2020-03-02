@@ -37,7 +37,7 @@ exports.create = function (env_params, appcollowner, id, entity, options, callba
     if(err) {
       callback(helpers.state_error ("db_default_mongo", exports.version, "create", err ))
     } else {
-      if (id) entity._id = id;
+      if (id) entity._id = get_real_object_id(id);
       theCollection.insert(entity, { w: 1, safe: true }, (err, results) => {
         if (err) callback(err);
         else callback(null, {
@@ -205,6 +205,7 @@ const get_coll = function(env_params, appcollowner, callback) {
   }
 }
 const dbConnectionString = function(env_params, dbName) {
+  //onsole.log("dbConnectionString env_params", env_params)
   const DEFAULT_UNIFIED_DB_NAME = "freezrdb"
   const db_name = (env_params.dbParams && env_params.dbParams.unifiedDbName)? env_params.dbParams.unifiedDbName:DEFAULT_UNIFIED_DB_NAME
   var connectionString = ""
