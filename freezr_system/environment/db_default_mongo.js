@@ -67,7 +67,7 @@ exports.read_by_id = function (env_params, appcollowner, id, cb) {
   })
 }
 exports.query = function(env_params, appcollowner, query={}, options, cb) {
-  if (query && query._id) query._id = get_real_object_id(query._id)
+  query = convertIds(query)
   get_coll(env_params, appcollowner, (err, theCollection) =>{
     if(err) {
       callback(helpers.state_error ("db_default_mongo", exports.version, "query", err ))
@@ -81,6 +81,7 @@ exports.query = function(env_params, appcollowner, query={}, options, cb) {
   })
 }
 exports.update_multi_records= function (env_params, appcollowner, idOrQuery, updates_to_entity, options, callback) {
+  //onsole.log("mongo update_multi_records",idOrQuery)
   get_coll(env_params, appcollowner, (err, coll) =>{
     if(err) {
       callback(helpers.state_error ("db_default_mongo", exports.version, "update_multi_records", err ))
@@ -89,8 +90,8 @@ exports.update_multi_records= function (env_params, appcollowner, idOrQuery, upd
       if (typeof idOrQuery == "string") {
         idOrQuery={'_id': get_real_object_id(idOrQuery)}
         mutli=false
-      } else if (idOrQuery._id) {
-        idOrQuery._id = get_real_object_id(idOrQuery._id)
+      } else  {
+        idOrQuery = convertIds(idOrQuery)
       }
       coll.update(idOrQuery, {$set: updates_to_entity}, { safe: true }, callback);
     }
@@ -228,4 +229,19 @@ const dbConnectionString = function(env_params, dbName) {
     console.warn("ERROR - NO DB HOST")
     return null;
   }
+}
+const convertIds = function(query) {
+  if (!query) return query;
+  if (typeof query=="string") return query;
+  if (typeof query=="number") return query;
+  if (Array.isArray(query)) return query.map(convertIds)
+  let retObj = {}
+  for (let [key, value] of Object.entries(query)) {
+    if (key=="_id") {
+      retObj[key] = get_real_object_id(value)
+    } else {
+      retObj[key] = convertIds(value)
+    }
+  }
+  return retObj
 }

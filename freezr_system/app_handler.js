@@ -957,7 +957,8 @@ exports.sendUserFile = function (req , res){
   let newpath = "userfiles/"+parts[1]+"/"+parts[0]+"/"+decodeURI(parts[2])
   if (!FILE_TOKEN_CACHE[key] || !FILE_TOKEN_CACHE[key][req.query.fileToken] || (new Date().getTime - FILE_TOKEN_CACHE[key][req.query.fileToken] >FILE_TOKEN_EXPIRY)) {
     if (!FILE_TOKEN_CACHE[key] ) {
-      console.warn("NO KEY", req.url)} // , FILE_TOKEN_CACHE
+      //onsole.warn("NO KEY", req.url)
+    } // , FILE_TOKEN_CACHE
     //if ( !FILE_TOKEN_CACHE[key][req.query.fileToken]  ) //onsole.warn("NO TOKEN ",req.query.fileToken,"cache is ",FILE_TOKEN_CACHE[key])
     //if ((new Date().getTime - FILE_TOKEN_CACHE[key][req.query.fileToken] >FILE_TOKEN_EXPIRY)) //onsole.warn("EXPIRED TOKEN")
     res.sendStatus(401);
@@ -1165,7 +1166,7 @@ exports.setObjectAccess = function (req, res) {
                 if (addToAccessibles) changes._publicid = (doGrant? accessibles_object_id: null);
                 changes._date_published = date_Published;
                 records_changed++
-                db_handler.update (req.freezr_environment, appcollowner, data_object._id, changes,{replaceAllFields:false, newSystemParams:true, old_entity:data_object /*not needed by momngo but may be useful for other db's*/}, cb)
+                db_handler.update (req.freezr_environment, appcollowner, (data_object._id+""), changes,{replaceAllFields:false, newSystemParams:true, old_entity:data_object /*not needed by momngo but may be useful for other db's*/}, cb)
 
               },
               function (err) {
@@ -1621,7 +1622,6 @@ exports.setObjectAccess = function (req, res) {
                             cb(helpers.app_data_error(exports.version, "make_sure_required_field_names_exist", "app name uknown","More than one result retuened for referenced object "+referenced_object_name+"from "+a_ref_name,""));
                         }
                     });
-
                 }
             } );
 

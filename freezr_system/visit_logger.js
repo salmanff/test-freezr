@@ -208,7 +208,7 @@ function addRecordToDailySummary(req, prefs, options) {
 		day_db_log[today][user_type].numAppPageViews++
 	} else if(APP_FILE_SOURCES.indexOf(options.source)>-1) {
 		day_db_log[today][user_type].numAppFiles++
-	} else if (options.source == 'userDataAccessRights') {
+	} else if (options.source == 'userDataAccessRights' || options.source == 'userLoggedInRights') {
 		var parts = req.originalUrl.split('?')[0].split("/");
 		if (parts[2]=="db") {
 		  if (parts[3] == "upload") {
