@@ -66,7 +66,7 @@ exports.read_by_id = function (env_params, appcollowner, id, cb) {
     }
   })
 }
-exports.query = function(env_params, appcollowner, query={}, options, cb) {
+exports.query = function(env_params, appcollowner, query={}, options, callback) {
   query = convertIds(query)
   get_coll(env_params, appcollowner, (err, theCollection) =>{
     if(err) {
@@ -76,7 +76,7 @@ exports.query = function(env_params, appcollowner, query={}, options, cb) {
       .sort(options.sort || null)
       .limit(options.count || ARBITRARY_FIND_COUNT_DEFAULT)
       .skip(options.skip || 0)
-      .toArray(cb);
+      .toArray(callback);
     }
   })
 }
@@ -232,6 +232,7 @@ const dbConnectionString = function(env_params, dbName) {
 }
 const convertIds = function(query) {
   if (!query) return query;
+  if (typeof query=="boolean") return query;
   if (typeof query=="string") return query;
   if (typeof query=="number") return query;
   if (Array.isArray(query)) return query.map(convertIds)
