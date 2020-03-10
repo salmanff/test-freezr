@@ -256,7 +256,9 @@ exports.app_password_update_params = function (req, res) {
 exports.login_for_app_token = function (req, res){ // uses onetime password
   console.log("login_for_app_token  "+JSON.stringify(req.body));
 
-  const {password, user_id, app_name} = req.body;
+  const {password, username, client_id, grant_type, expiry}  = req.body;
+  const user_id = username;
+  const app_name = client_id;
   let app_token = null
 
   async.waterfall([
@@ -269,6 +271,8 @@ exports.login_for_app_token = function (req, res){ // uses onetime password
         cb(helpers.auth_failure("account_handler.js",exports.version,"login_for_app_token","Missing app name"));
       else if (!password)
         cb(helpers.auth_failure("account_handler.js",exports.version,"login_for_app_token","Missing password"));
+      else if (grant_type!="password")
+        cb(helpers.auth_failure("account_handler.js",exports.version,"login_for_app_token","Wrong grant type - onlt password accepted"));
       else if (!req.session.device_code) {
         req.session.device_code = helpers.randomText(20);
         db_handler.set_or_update_user_device_code(req.freezr_environment, req.session.device_code, user_id, app_name, req.headers['user-agent'],  (err, results) => cb(err))
@@ -279,7 +283,8 @@ exports.login_for_app_token = function (req, res){ // uses onetime password
 
     // 1. get the password record
     function (cb) {
-        db_handler.get_app_token_record_using_pw_and_mark_used(req.freezr_environment, req.session.device_code, req.body, cb)
+      params = {password, user_id, app_name, expiry}
+        db_handler.get_app_token_record_using_pw_and_mark_used(req.freezr_environment, req.session.device_code, params, cb)
     }
   ],
   function (err, app_token, expires_in) {
@@ -290,7 +295,7 @@ exports.login_for_app_token = function (req, res){ // uses onetime password
     } else  if (!app_token){
       helpers.send_failure(res, helpers.error("Could not get app token for "+app_name),"account_handler", exports.version,"login_for_app_token");
     } else  {
-      helpers.send_success(res, { app_token: app_token, user_id:user_id, app_name: app_name, expires_in:expires_in});
+      helpers.send_success(res, { access_token: app_token, user_id:user_id, app_name: app_name, expires_in:expires_in});
     }
   });
 }

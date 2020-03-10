@@ -109,6 +109,7 @@ exports.re_init_freezr_environment = function(env_params, callback)  {
     }
 }
 exports.check_db      = function(env_params, callback) {
+  //onsole.log("going to check db",env_params)
   const appcollowner = {
     app_name:'info_freezr_admin',
     collection_name : 'params',
@@ -184,7 +185,7 @@ exports.query = function(env_params, appcollowner, idOrQuery={}, options, callba
     dbToUse(env_params).read_by_id(env_params, appcollowner, idOrQuery, function(err, object) {callback(err, (object? [object]:[]))})
   } else {
     let [err, well_formed] = [null, true] //todo fix // query_is_well_formed(idOrQuery)
-    if (true || well_formed) {
+    if (well_formed) {
       dbToUse(env_params).query(env_params, appcollowner, idOrQuery, options, callback)
     } else {
       callback(err)
@@ -206,7 +207,7 @@ exports.update = function (env_params, appcollowner, idOrQuery, updates_to_entit
   const uses_record_id = (typeof idOrQuery == "string" && idOrQuery.length>0)
   //const find = uses_record_id? {_id: idOrQuery }: idOrQuery;
 
-  if (options.replaceAllFields) {
+  if (options && options.replaceAllFields) {
     if (options.old_entity) { // assumes system has found old_entity and so skip one extra find
       const entity_id = (typeof idOrQuery == "string")? idOrQuery : options.old_entity._id
       helpers.RESERVED_FIELD_LIST.forEach(key => {
@@ -592,7 +593,7 @@ exports.get_app_token_record_using_pw_and_mark_used = function(env_params, sessi
         let expires_in = results[0].expiry;
         if (expiry && expiry<expires_in) expires_in = expiry
         exports.update (env_params, APP_TOKEN_APC, (record._id+""),
-          {date_used:(new Date().getTime()), user_device:session_device_code, expiry:expires_in}, null,function(err, results) {
+          {date_used:(new Date().getTime()), user_device:session_device_code, expiry:expires_in}, {},function(err, results) {
             if (err) {callback(err)} else {callback(null, record.app_token, expires_in)}
           })
       }

@@ -1091,6 +1091,7 @@ var recheckPermissionExists = function(env_params, permission_record, freezr_env
             var aDate = new Date(permission_record[name])
             permission_record["_"+name] = aDate.toLocaleString();
          })
+         //console.log 2020 - see above vs redoing __date_published below - diplicated??
         var field_names = (app_config &&
             app_config.collections &&
             app_config.collections[permission_record._collection_name] &&

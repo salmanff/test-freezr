@@ -495,10 +495,19 @@ do_db_query = function (req,res, requestor, appcoll, usersWhoGrantedAppPermissio
   if (app_config_permission_schema.max_count && count+skip>app_config_permission_schema.max_count) {
     count = Math.max(0,app_config_permission_schema.max_count-skip);
   }
-  let sort = app_config_permission_schema.sort_fields || req.body.sort || {'_date_modified': -1} // default
+  let sort = app_config_permission_schema.sort_fields || req.body.sort;
+  if (!sort) sort = {'_date_modified': -1} // default
   if (!req.body.q) req.body.q = {}
-  //onsole.log("In query to find", JSON.stringify (req.body.query_params))
-  //onsole.log("In query sort is ",req.body.sort)
+  if (req.body.q._modified_before) {
+    req.body.q._date_modified = {$lt:parseInt(req.body.q._modified_before+0)}
+    delete  req.body.q._modified_before
+  }
+  if (req.body.q._modified_after) {
+    req.body.q._date_modified = {$gt:parseInt(req.body.q._modified_after+0)}
+    delete  req.body.q._modified_after
+  }
+  //onsole.log("In query to find", JSON.stringify (req.body.q))
+  //onsole.log("In query sort is ",sort)
   //onsole.log("In query count is ",req.body.count)
   let all_permitted_records = [], return_fields= null;
 

@@ -297,7 +297,8 @@ const add_app_uses = function(){
 
     // CEPS
         app.get('/ceps/ping', addVersionNumber, account_handler.ping);
-        app.post('/ceps/app_token', addVersionNumber, account_handler.login_for_app_token);
+        app.post('/oauth/token', addVersionNumber, account_handler.login_for_app_token);
+        //app.post('/ceps/app_token', addVersionNumber, account_handler.login_for_app_token); old
         app.post('/ceps/write/:app_table', userDataAccessRights, app_handler.write_record);
         app.get('/ceps/read/:app_table/:data_object_id', userDataAccessRights, app_handler.read_record_by_id);
         app.get('/ceps/query/:app_table', userDataAccessRights, app_handler.db_query);

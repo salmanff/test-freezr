@@ -30,7 +30,6 @@ The following variables need to have been declared in index.html
   var freezr_app_version = freezr_app_version? freezr_app_version:"n/a";
   var freezr_server_version = freezr_server_version? freezr_server_version:"n/a";
 // db Functions - data base related functions - to read or write
-// console.log 2020 - need new functions for restoreRecord
 freezr.utils.getOpCbFrom = function(optionsAndCallback) {
   if (!optionsAndCallback || optionsAndCallback.length==0) return [null, null]
   const callback = optionsAndCallback[optionsAndCallback.length-1];
@@ -126,8 +125,10 @@ freezr.ceps.getquery = function(  ...optionsAndCallback) {
     for (param in options.q) {
       if (param=="_date_modified" && options.q._date_modified.$lt && !isNaN(options.q._date_modified.$lt) ) {
         options.q._modified_before=options.q._date_modified.$lt
+        delete options.q._date_modified
       } else if (param=="_date_modified" && options.q._date_modified.$gt && !isNaN(options.q._date_modified.$gt) ) {
         options.q._modified_after=options.q._date_modified.$gt
+        delete options.q._date_modified
       }
       if (typeof options.q[param] == "object"){
         delete options.q[param]
@@ -477,7 +478,7 @@ freezer_restricted.permissions= {};
      		badBrowser = true;
       }
 
-      const PATHS_WO_TOKEN=['/ceps/app_token','/ceps/ping','/v1/admin/first_registration','/v1/account/login']
+      const PATHS_WO_TOKEN=['/oauth/token','/ceps/ping','/v1/admin/first_registration','/v1/account/login']
       if (badBrowser) {
       	callback({"error":true, "message":"You are using a non-standard browser. Please upgrade."});
       } else if (!freezer_restricted.connect.authorizedUrl(url, method)) {
