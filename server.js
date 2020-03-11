@@ -303,7 +303,7 @@ const add_app_uses = function(){
         app.get('/ceps/read/:app_table/:data_object_id', userDataAccessRights, app_handler.read_record_by_id);
         app.get('/ceps/query/:app_table', userDataAccessRights, app_handler.db_query);
         app.put('/ceps/update/:app_table/:data_object_id', userDataAccessRights, app_handler.write_record)
-        app.delete('/ceps/:app_table/:data_object_id', userDataAccessRights, app_handler.delete_record)
+        app.delete('/ceps/delete/:app_table/:data_object_id', userDataAccessRights, app_handler.delete_record)
         // app files and pages and user files
 
         app.get('/feps/ping', addVersionNumber, account_handler.ping);
