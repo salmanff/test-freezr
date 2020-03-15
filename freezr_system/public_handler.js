@@ -1010,7 +1010,9 @@ var recheckPermissionExists = function(env_params, permission_record, freezr_env
             //onsole.log("permission_record",permission_record)
             // todo "2020 - nb may need to recheck logic here as _ owner was changed to data_owner")
             if (!permission_record.data_owner && permission_record.data_owner!="fradmin") permission_record.data_owner=permission_record.data_owner; // fixing legacy
-            const app_table = permission_record.requestee_app+(permission_record.collection_name?("."+permission_record.collection_name):"")
+            const app_table = permission_record.requestee_app_table || (permission_record.requestee_app+(permission_record.collection_name?("."+permission_record.collection_name):""))
+            console.log ("permission_by_owner_and_permissionName",permission_record.data_owner, permission_record.requestor_app, app_table, permission_record.permission_name)
+            console.log("permission_record",permission_record)
             db_handler.permission_by_owner_and_permissionName (env_params, permission_record.data_owner, permission_record.requestor_app, app_table, permission_record.permission_name, cb)
         }
     },
