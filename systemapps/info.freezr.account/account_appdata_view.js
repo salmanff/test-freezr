@@ -40,7 +40,7 @@ freezr.initPageScripts = function() {
 		if (configReturn.error ) {
 			showWarning("Error connecting to server");
 		} else {
-			configReturn = freezr.utils.parse(configReturn);
+			console.log("got app config ",configReturn)
 			dl.meta.all_collection_names = configReturn.collection_names;
 			dl.meta.app_config = configReturn.app_config;
 			dl.meta.current_collection_num = 0

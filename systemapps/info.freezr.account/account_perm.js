@@ -12,7 +12,7 @@ freezr.initPageScripts = function() {
       window.close()
     } else if (evt.target.id && freezr.utils.startsWith(evt.target.id,"freezerperm_") && freezr.utils.startsWith(window.location.pathname,"/account/perms/") ) {
       var parts = evt.target.id.split('_'); // freezerperm_{{requestee_app???}}_{{permission_name}}_{{action}}
-      let details= {requestor_app:parts[1],requestee_app_table:parts[2],action:parts[3] }
+      let details= {requestor_app:parts[2],requestee_app_table:parts[1],action:parts[3] }
       details.permission_name=parts.slice(4).join("_")
       changePermission(details, evt.target, changePermissionCallBack)
     }
@@ -39,7 +39,7 @@ freezr.initPageScripts = function() {
       document.getElementById("confirm_title").innerHTML= (confirm.action=="Accept"? "Are you sure you want to grant this permission?":"Please confirm you want revoke this permission:")
       document.getElementById("confirm_app_name").innerHTML= freezr.utils.startsWith(confirm.requestee_app_table,confirm.requestor_app)? ("App: "+confirm.requestor_app):("App: "+confirm.requestor_app+" is asking to access "+confirm.requestee_app_table)
       document.getElementById("confirm_permission_name").innerHTML= "Permission name: "+confirm.permission_name
-      const sentenceId = "sentence_"+confirm.requestee_app_table+"_"+confirm.requestor_app+"_"+confirm.permission_name
+      const sentenceId = "sentence_"+confirm.requestee_app_table +"_"+confirm.requestor_app+"_"+confirm.permission_name
       if (document.getElementById(sentenceId)){
         document.getElementById("confirm_perm_sentence").innerHTML= document.getElementById(sentenceId).innerHTML
         document.getElementById("confirm_dialogue").style.display="block"
@@ -70,7 +70,6 @@ var showError = function(errorText) {
 
 
 const changePermission = function(details, theButt, callback) {
-    //onsole.log("changePermission details",details)
     if (!theButt) { //
       document.getElementById("confirm_dialogue_inner").style.display="none"
       document.getElementById("confirm_spinner").style.display="block"

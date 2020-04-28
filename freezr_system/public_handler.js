@@ -56,9 +56,9 @@ const ALL_APPS_HMTL_CONFIG = { // html and configuration for generic public page
     }
 
 exports.generatePublicPage = function (req, res) {
-    //    app.get('/pcard/:user_id/:app_name/:collection_name/:data_object_id'
-    //    app.get('/pcard/:user_id/:requestor_app/:permission_name/:app_name/:collection_name/:data_object_id', addVersionNumber, public_handler.generatePublicPage);
-    //    app.get('/v1/pobject/:user_id/:app_name/:collection_name/:data_object_id', public_handler.generatePublicPage); // collection_name is files
+    // OLD: app.get('/pcard/:..., addVersionNumber, public_handler.generatePublicPage);
+    // OLD: app.get('/pcard/:user_id/:requestor_app/:permission_name/:app_name/:collection_name/:data_object_id', addVersionNumber, public_handler.generatePublicPage);
+    //    app.get('/v1/pobject/:user_id/:app_table/:data_object_id', public_handler.generatePublicPage); // collection_name is files
             // Note: for pcard, app_name is requestee_app
 
     //    app.get('/papp/:app_name/:page', addVersionNumber, public_handler.generatePublicPage);
@@ -155,6 +155,7 @@ exports.generatePublicPage = function (req, res) {
                             res.end(contents);
                         }
                     } else {
+                      //onsole.log("record,html_file",record,html_file)
                         var record, html_file;
                         if (!results || !results.results || results.results.length==0) {
                             record = {};
@@ -162,6 +163,7 @@ exports.generatePublicPage = function (req, res) {
                             html_file = ALL_APPS_HMTL_CONFIG.public_pages.allPublicRecords.html_file;
                         } else {
                             record = formatFields(results.results[0]);
+                            //onsole.log("app_config.permissions",app_config.permissions)
                             html_file = (app_config && app_config.permissions && app_config.permissions[record._permission_name] && app_config.permissions[record._permission_name].pcard)? app_config.permissions[record._permission_name].pcard : null;
                         }
                         if (objectOnly) {
@@ -169,6 +171,7 @@ exports.generatePublicPage = function (req, res) {
                         } else if (html_file) {
                             var Mustache = require('mustache');
                             // todo add option to wrap pcard in html header
+                            //onsole.log('getting public card file ',html_file)
                             file_handler.get_file_content(app_name, "public"+file_handler.sep()+html_file , req.freezr_environment, function(err, html_content) {
                                 if (err) {
                                     helpers.send_failure(res, helpers.error("file missing","html file missing - cannot generate card without a card html ("+page_name+")in app:"+app_name+"."), "public_handler", exports.version, "generatePublicPage" )
@@ -197,10 +200,12 @@ exports.generatePublicPage = function (req, res) {
                     user_id:req.params.user_id,
                     count: 1,
                     skip: 0,
+                    /* todo console.log - removed 2020-03 conflict with v1/pobject
                     q: {
                         collection_name: req.params.collection_name,
                         data_object_id: req.params.data_object_id
                     }
+                    */
                 };
                 exports.dbp_query(req,res);
             }
@@ -583,7 +588,10 @@ exports.generatePublicObjectPage = function (req, res) {
             })
         }
     }
-    req.body.pid = req.params.object_public_id;
+    if (req.params.object_public_id)
+      req.body.pid = req.params.object_public_id;
+    else
+      req.body.pid = req.params.user_id + '/' + req.params.app_table + '/' + req.params.data_object_id
     exports.dbp_query(req,res);
 };
 function parse_attached_files(options, page_params, callback ){
@@ -686,6 +694,9 @@ exports.dbp_query = function (req, res){
     if (req.query.app_name) permission_attributes.requestee_app = req.query.app_name.toLowerCase();
     if (req.query.app) permission_attributes.requestee_app = req.query.app.toLowerCase();
     if (req.params && req.params.app_name) permission_attributes.requestee_app = req.params.app_name.toLowerCase();
+    if (req.params && req.params.requestee_app_table) permission_attributes.requestee_app_table = req.params.requestee_app_table.toLowerCase();
+    if (req.params && req.params.user_id) permission_attributes.data_owner = req.params.user_id.toLowerCase();
+    if (req.params && req.params.data_object_id) permission_attributes.data_object_id = req.params.data_object_id;
     if (req.query.user_id && !permission_attributes.data_owner) permission_attributes.data_owner = req.query.user_id.toLowerCase();
     if (req.query.pid && !permission_attributes._id) permission_attributes._id = req.query.pid;
 
@@ -693,6 +704,7 @@ exports.dbp_query = function (req, res){
     if (req.query.mindate) permission_attributes._date_published ={'$gt': parseInt(req.query.mindate)}
 
     if (req.query.search || req.query.q) {
+      //onsole.log("req.query.search:",req.query.search," req.query.q:"req.query.q)
         req.query.search = decodeURIComponent(((req.query.search || "") + " "+(req.query.q || "")).trim()).toLowerCase();
         if (req.query.search.indexOf(' ')<0) {
             permission_attributes.search_words = req.query.search;
@@ -719,6 +731,7 @@ exports.dbp_query = function (req, res){
         },
         // 3 see permission record and make sure it is still granted
         function (results, cb) {
+          //onsole.log("dbp_query results",results)
             if (!results || results.length==0) {
                 cb(null);
             }  else {
@@ -770,6 +783,7 @@ exports.dbp_query = function (req, res){
         } else {
             var sortBylastPubDate = function(obj1,obj2) { return obj2._date_published - obj1._date_published; }
             data_records = data_records.sort(sortBylastPubDate)
+            //onsole.log("pdbq data_records",data_records)
             if (req.freezrInternalCallFwd) {
                 //if (errs && errs.length>0) //onsole.log("end of query with "+data_records.length+" results and errs "+JSON.stringify(errs))
                 req.freezrInternalCallFwd(null, {results:data_records, errors:errs, next_skip:(skip+count)});
@@ -1011,8 +1025,8 @@ var recheckPermissionExists = function(env_params, permission_record, freezr_env
             // todo "2020 - nb may need to recheck logic here as _ owner was changed to data_owner")
             if (!permission_record.data_owner && permission_record.data_owner!="fradmin") permission_record.data_owner=permission_record.data_owner; // fixing legacy
             const app_table = permission_record.requestee_app_table || (permission_record.requestee_app+(permission_record.collection_name?("."+permission_record.collection_name):""))
-            console.log ("permission_by_owner_and_permissionName",permission_record.data_owner, permission_record.requestor_app, app_table, permission_record.permission_name)
-            console.log("permission_record",permission_record)
+            //onsole.log ("permission_by_owner_and_permissionName",permission_record.data_owner, permission_record.requestor_app, app_table, permission_record.permission_name)
+            //onsole.log("permission_record",permission_record)
             db_handler.permission_by_owner_and_permissionName (env_params, permission_record.data_owner, permission_record.requestor_app, app_table, permission_record.permission_name, cb)
         }
     },

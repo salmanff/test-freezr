@@ -1,4 +1,4 @@
-/* Core freezr API - v0.0.122 - 2018-08
+/* Core freezr API - v0.0.122 - 2020-03
 
 The following variables need to have been declared in index.html
     freezr_app_name, freezr_app_token (previously 2019 freezr_app_code), freezr_user_id, freezr_user_is_admin
@@ -40,7 +40,7 @@ freezr.utils.getOpCbFrom = function(optionsAndCallback) {
 freezr.ceps.create = function(data, ...optionsAndCallback) {
   // write to the database
   // options:
-    // app_table or collection (in which case the app is assumed to be freezr_app_nameapp_table )
+    // app_table or collection (in which case the app is assumed to be freezr_app_name app_table )
     // updateRecord
   const [options, callback] = freezr.utils.getOpCbFrom(optionsAndCallback)
   if (!data) {
@@ -306,7 +306,7 @@ freezr.utils.getHtml = function(part_path, app_name, callback) {
     callback("error - can only get html files")
   } else {
     var html_url = '/app_files/'+app_name+"/"+part_path;
-    freezer_restricted.connect.read(html_url, null, callback);
+    freezer_restricted.connect.read(html_url, null, callback,{textResponse:true});
   }
 }
 freezr.utils.getAllAppList = function(callback) {
@@ -418,7 +418,7 @@ freezr.utils.longDateFormat = function(aDateNum) {
 }
 freezr.utils.testCallBack = function(returnJson) {
   returnJson = freezer_restricted.utils.parse(returnJson);
-  console.log("testCallBack - return json is ",returnJson);
+  //onsole.log("testCallBack - return json is ",returnJson);
 }
 
 /*  ==================================================================
@@ -443,7 +443,7 @@ freezer_restricted.permissions= {};
       } else {
         postData = data;
       }
-      // todo - add posting pictures
+      // todo - add posting pictures (???)
 
   	freezer_restricted.connect.send(url, postData, callback, "POST", contentType);
   };
@@ -458,7 +458,8 @@ freezer_restricted.permissions= {};
       }
   	freezer_restricted.connect.send(url, postData, callback, "PUT", contentType);
   };
-  freezer_restricted.connect.read = function(url, data, callback) {
+  freezer_restricted.connect.read = function(url, data, callback, options) {
+    // options - textResponse (response is text)
   	if (data) {
   	    var query = [];
   	    for (var key in data) {
@@ -466,10 +467,10 @@ freezer_restricted.permissions= {};
   	    }
   	    url = url  + '?' + query.join('&');
       }
-      freezer_restricted.connect.send(url, null, callback, 'GET', null)
+      freezer_restricted.connect.send(url, null, callback, 'GET', null, options)
   };
-  freezer_restricted.connect.send = function (url, postData, callback, method, contentType) {
-    //onsole.log("getting send req for url "+url)
+  freezer_restricted.connect.send = function (url, postData, callback, method, contentType, options) {
+    //onsole.log("getting send req for url "+url+" options",options)
   	let req = null, badBrowser = false;
     if (!callback) callback= freezr.utils.testCallBack;
   	try {
@@ -495,8 +496,9 @@ freezer_restricted.permissions= {};
         req.onreadystatechange = function() {
           if (req && req.readyState == 4) {
               var jsonResponse = req.responseText;
-              //onsole.log("AT freezr - status "+this.status+" resp"+req.responseText)
-              jsonResponse = jsonResponse? jsonResponse : {"error":"No Data sent from servers", "errorCode":"noServer"};
+              //onsole.log("AT freezr - status "+this.status+" "+url+" "+jsonResponse)
+              if (!jsonResponse) jsonResponse = '{"error":"No Data sent from servers", "errorCode":"noServer"}';
+              if (!options || !options.textResponse) jsonResponse = freezr.utils.parse(jsonResponse)
               if (this.status == 200 || this.status == 0) {
     				    callback(jsonResponse);
         			} else if (this.status == 400) {
@@ -531,7 +533,7 @@ freezer_restricted.permissions= {};
   freezer_restricted.menu.addFreezerDialogueElements = function(){
     //onsole.log("addFreezerDialogueElements")
     var freezerMenuButt = document.createElement('img');
-    freezerMenuButt.src = freezr.app.isWebBased? "/app_files/info.freezr.public/static/freezer_log_top.png": "./freezrPublic/static/freezer_log_top.png";
+    freezerMenuButt.src = freezr.app.isWebBased? "/app_files/info.freezr.public/static/freezer_log_top.png": "../freezrPublic/static/freezer_log_top.png";
     freezerMenuButt.id = "freezerMenuButt"
     freezerMenuButt.onclick = freezer_restricted.menu.freezrMenuOpen;
     freezerMenuButt.className = "freezerMenuButt_" + ((!freezr.app.isWebBased && /iPhone|iPod|iPad/.test(navigator.userAgent) )? "Head":"Norm");
@@ -619,7 +621,7 @@ freezer_restricted.permissions= {};
       permHtml = permHtml.all_perms_in_html
       document.getElementById('freezer_dialogueInnerText').innerHTML+=permHtml;
       freezer_restricted.menu.replace_missing_logos();
-    });
+    },{textResponse:true});
   }
   freezer_restricted.menu.replace_missing_logos = function() {
     //let imglist = document.getElementsByClassName("logo_img");
@@ -668,7 +670,9 @@ freezer_restricted.permissions= {};
         return [((height - h) / 2 / systemZoom + dualScreenTop), ((width - w) / 2 / systemZoom + dualScreenLeft)]
       }
       let [top, left] = getTopLeft(600,350)
-      window.open("/account/perms?window=popup&requestor_app="+parts[2]+"&permission_name="+name+"&requestee_app_table="+parts[1]+"&action="+parts[3],"window","width=600, height=350, toolbar=0, menubar=0, left ="+left+", top="+top)
+      let url = "/account/perms?window=popup&requestor_app="+parts[2]+"&permission_name="+name+"&requestee_app_table="+parts[1]+"&action="+parts[3]
+      if (!freezr.app.isWebBased) url = freezr_server_address+url
+      window.open(url,"window","width=600, height=350, toolbar=0, menubar=0, left ="+left+", top="+top)
     }
   });
 

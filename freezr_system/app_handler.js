@@ -1084,7 +1084,7 @@ exports.setObjectAccess = function (req, res) {
     // 3. get app permissions
     function( the_user, app_name, logged_in, cb) {
       user_id = the_user
-      accessibles_object_id = req.body.publicid || user_id+"/"+req.params.requestor_app+"/"+req.params.permission_name+"/"+data_object_id;
+      accessibles_object_id = req.body.publicid || user_id+"/"+requestee_app_table+"/"+data_object_id;
 
       db_handler.permission_by_owner_and_permissionName (req.freezr_environment, user_id, req.params.requestor_app, requestee_app_table, req.params.permission_name, cb)
     },
@@ -1102,6 +1102,7 @@ exports.setObjectAccess = function (req, res) {
             collection_name:null,
             owner:user_id
           }
+          //onsole.log("querying at setObjectAccess ",data_object_id,query_criteria)
           db_handler.query(req.freezr_environment, appcollowner,
             (data_object_id? data_object_id : query_criteria),
             {},cb)
@@ -1205,9 +1206,10 @@ exports.setObjectAccess = function (req, res) {
       //onsole.log("results",results)
         if (addToAccessibles) {
             if (results == null || results.length == 0) {
-                //  accessibles_object_id automated version is user_id+"/"+req.params.requestor_app+"/"+req.params.permission_name+"/"+requestee_app+"/"+collection_name+"/"+data_object_id;
+                //  accessibles_object_id automated version is user_id+"/"+requestee_app_table+"/"+"/"+data_object_id;
                 var accessibles_object = {
                     'requestee_app_table':requestee_app_table,
+                    'requestee_app': req.params.requestor_app,
                     'data_owner':user_id,
                     'data_object_id': data_object_id,
                     'permission_name':req.params.permission_name,
@@ -1223,7 +1225,7 @@ exports.setObjectAccess = function (req, res) {
                     }
                 if (!doGrant) {
                     app_err("cannot remove a permission that doesnt exist");
-                    cb(null); // Internal error which can be ignored as non-existant permission was being removed
+                    cb(null, null); // Internal error which can be ignored as non-existant permission was being removed
                 } else { // write new permission
                     db_handler.create (req.freezr_environment, ACCESSIBLES_APPCOLLOWNER, null, accessibles_object, {keepReservedFields:true}, cb)
                 }

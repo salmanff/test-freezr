@@ -152,6 +152,7 @@ exports.get_file_content = function(app_name, page_url, env_params, callback){
         fs.readFile( exports.appsLocalPathTo( filePath ), 'utf8', function (err, html_content) {  callback(err, html_content) })
     } else {
         filePath = filePath.replace("app_files","userapps");
+        //onsole.log("reading app file "+filePath)
         custom_environment.get_file_content(filePath, env_params, callback);
     }
 }

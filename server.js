@@ -216,11 +216,15 @@ const add_app_uses = function(){
         app.get('/apps/:app_name/:page', appPageAccessRights, app_handler.generatePage);
         app.get('/favicon.ico', servePublicAppFile)
 
+      // publci todo console.log(review)
+      app.get('/pcard/:user_id/:requestor_app/:permission_name/:app_name/:collection_name/:data_object_id', addVersionNumber, public_handler.generatePublicPage);
+      app.get('/pcard/:user_id/:app_name/:collection_name/:data_object_id', addVersionNumber, public_handler.generatePublicPage);
+
+
     // public
-        app.get('/pcard/:user_id/:requestor_app/:permission_name/:app_name/:collection_name/:data_object_id', addVersionNumber, public_handler.generatePublicPage);
-        app.get('/pcard/:user_id/:app_name/:collection_name/:data_object_id', addVersionNumber, public_handler.generatePublicPage);
         app.get('/papp/:app_name/:page', addVersionNumber, public_handler.generatePublicPage);
         app.get('/papp/:app_name', addVersionNumber, public_handler.generatePublicPage);
+        app.get('/ppage/:user_id/:app_table/:data_object_id', addVersionNumber, public_handler.generatePublicObjectPage);
         app.get('/ppage/:object_public_id', addVersionNumber, public_handler.generatePublicObjectPage);
         app.get('/ppage', addVersionNumber, public_handler.generatePublicPage);
         app.get('/rss.xml', addVersionNumber, public_handler.generatePublicPage);
@@ -229,7 +233,7 @@ const add_app_uses = function(){
         app.get('/v1/pdbq/:app_name', addVersionNumber, public_handler.dbp_query);
         app.post('/v1/pdbq', addVersionNumber, public_handler.dbp_query);
         app.get('/v1/publicfiles/:requestee_app/:user_id/*', addVersionNumber, public_handler.get_public_file);
-        app.get('/v1/pobject/:user_id/:app_name/:collection_name/:data_object_id', addVersionNumber, public_handler.generatePublicPage);
+        app.get('/v1/pobject/:user_id/:requestee_app_table/:data_object_id', addVersionNumber, public_handler.generatePublicPage);
 
     // developer utilities
         app.get('/v1/developer/config/:app_name',userLoggedInRights, app_handler.getConfig);

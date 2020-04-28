@@ -142,10 +142,11 @@ exports.getAllCollectionNames = function(env_params, user_id, app_name, callback
           callback(null, null);
         } else if (nameObjList  && nameObjList.length>0){
           var a_name, collection_names=[];
+          coll_name_prefix = (user_id+'__'+app_name).replace(/\./g,"_")
           if (nameObjList && nameObjList.length > 0) {
             nameObjList.forEach(function(name_obj) {
               a_name = name_obj.name;
-              if (a_name && a_name!="system" && helpers.startsWith(a_name,app_name)) collection_names.push(a_name.slice(user_id.length+app_name.length+3));
+              if (a_name && a_name!="system" && helpers.startsWith(a_name,coll_name_prefix)) collection_names.push(a_name.slice(user_id.length+app_name.length+3));
             });
           }
           callback(null, collection_names);

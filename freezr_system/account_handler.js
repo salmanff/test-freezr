@@ -328,9 +328,17 @@ exports.app_logout = function (req, res) {
   const app_token = (req.header('Authorization') && req.header('Authorization').length>10)? req.header('Authorization').slice(7):null;
 
   db_handler.find_token_from_cache_or_db(req.freezr_environment, app_token, (err, results) => {
-    if (err && (!results || results.length==0 || !results[0]._id)) {
+    if (false) { // if requires session
+      req.session.logged_in = false;
+      req.session.logged_in_user_id = null;
+      req.session.logged_in_date = null;
+      req.session.logged_in_as_admin = false;
+    }
+    if (err) {
       console.warn(err)
       helpers.send_failure(res, err, "account_handler", exports.version, "app_logout");
+    } else if (!results || results.length==0 || !results[0]._id){
+      helpers.send_success(res, { 'logged_out': true , err:'could not find logged in info'});
     } else {
       let thequery = results[0]._id+""; // todo - theoretically there could be multiple and the right one need to be found
       let nowDate = new Date().getTime() - 1000
@@ -339,10 +347,6 @@ exports.app_logout = function (req, res) {
         if (err) {
           helpers.send_failure(res, err, "account_handler", exports.version, "app_logout");
         } else {
-          req.session.logged_in = false;
-          req.session.logged_in_user_id = null;
-          req.session.logged_in_date = null;
-          req.session.logged_in_as_admin = false;
           helpers.send_success(res, { 'logged_out': true });
         }
       })
@@ -907,7 +911,7 @@ exports.changeNamedPermissions = function(req, res) {
 
         // 4. Make sure of validity and update permission record
         function (results, cb) {
-          console.log("changeNamedPermissions - resuylts",results)
+          //onsole.log("changeNamedPermissions - results",results)
           if (results.length == 0) {
             helpers.warning ("account_handler", exports.version, "changeNamedPermissions","SNBH - permissions should be recorded already via app_config set up");
             db_handler.create_query_permission_record(req.freezr_environment, req.session.logged_in_user_id, requestor_app, requestee_app_table, permission_name, schemad_permission, action, cb);
@@ -943,7 +947,6 @@ exports.changeNamedPermissions = function(req, res) {
       if (err) {
         helpers.send_failure(res, err,"account_handler", exports.version,"changeNamedPermissions");
       } else {
-        // check - to delete
         helpers.send_success(res, {success: true, 'permission_name':permission_name  , 'buttonId':req.body.changeList[0].buttonId, 'action':action, 'aborted':success.aborted, 'flags':success.flags});
       }
     });

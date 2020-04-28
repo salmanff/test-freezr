@@ -263,7 +263,7 @@ var buttons = {
   },
   'updateAppList': function() {
       freezr.utils.getAllAppList (function (returndata) {
-          var theData = freezr.utils.parse(returndata);
+          var theData = returndata;
           var theEl = document.getElementById("app_list");
           if(!theData) {
             theEl.innerHTML = "No Apps have been installed";
