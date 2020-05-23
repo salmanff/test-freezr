@@ -60,14 +60,11 @@ freezr.initPageScripts = function() {
   setTimeout(freezer_restricted.menu.replace_missing_logos,2)
 }
 
-
-
 var showError = function(errorText) {
   var errorBox=document.getElementById("errorBox");
   errorBox.style="display:block"
   errorBox.innerHTML= errorText;
 }
-
 
 const changePermission = function(details, theButt, callback) {
     if (!theButt) { //
@@ -89,7 +86,7 @@ const changePermission = function(details, theButt, callback) {
 
 
 const changePermissionCallBack = function(returnJson, details, theButt) {
-    //onsole.log('permission Callback ',returnJson);
+    //console.log('permission Callback ',returnJson);
     returnJson = freezer_restricted.utils.parse(returnJson);
     //document.getElementById("confirm_dialogue").style.display="none"
     if (returnJson.success) {

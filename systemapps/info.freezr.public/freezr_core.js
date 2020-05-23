@@ -156,7 +156,7 @@ freezr.feps.postquery = function(...optionsAndCallback) {
 freezr.ceps.update = function(data={}, ...optionsAndCallback) {
   // simple record update, assuming data has a ._id object
   // options:
-    // app_table or collection (in which case the app is assumed to be freezr_app_nameapp_table )
+    // app_table or collection (in which case the app is assumed to be freezr_app_name.app_table )
   const [options, callback] = freezr.utils.getOpCbFrom(optionsAndCallback)
   if (!data._id) {
     callback({"error":"No _id to update."});
@@ -219,9 +219,8 @@ freezr.perms.getAllAppPermissions = function(callback) {
 }
 freezr.perms.isGranted = function(permission_name, callback) {
   // see if a permission has been granted by the user - callback(isGranted)
-  var url = '/v1/permissions/getall/'+freezr_app_name+'/'+freezr_app_code;
+  var url = '/v1/permissions/getall/'+freezr_app_name;
   freezer_restricted.connect.read(url, null, function(ret){
-    ret = freezr.utils.parse(ret);
     let isGranted = false;
     ret.forEach((aPerm) => {
       if (aPerm.permission_name == permission_name && aPerm.granted == true) isGranted=true;
@@ -265,8 +264,7 @@ Object.keys(freezr.promise).forEach(typeO => {
       var args = Array.prototype.slice.call(arguments);
       return new Promise(function (resolve, reject) {
         args.push(function(resp) {
-          resp=freezr.utils.parse(resp);
-          if (!resp || resp.error) {reject(resp);} else { resolve(resp)}
+          if (resp===undefined || resp===null || resp.error) {reject(resp);} else { resolve(resp)}
         })
         freezr[typeO][freezrfunc](...args)
       });

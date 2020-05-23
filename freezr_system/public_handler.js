@@ -672,7 +672,7 @@ exports.dbp_query = function (req, res){
     */
 
 
-    console.log("dbp_query body ",req.body, " params ",req.params, " query ",req.query);
+    //console.log("dbp_query body ",req.body, " params ",req.params, " query ",req.query);
 
     if (helpers.isEmpty(req.query)) req.query=req.body; // make post and get equivalent
     if (!req.query) req.query = {};
@@ -783,7 +783,6 @@ exports.dbp_query = function (req, res){
         } else {
             var sortBylastPubDate = function(obj1,obj2) { return obj2._date_published - obj1._date_published; }
             data_records = data_records.sort(sortBylastPubDate)
-            //onsole.log("pdbq data_records",data_records)
             if (req.freezrInternalCallFwd) {
                 //if (errs && errs.length>0) //onsole.log("end of query with "+data_records.length+" results and errs "+JSON.stringify(errs))
                 req.freezrInternalCallFwd(null, {results:data_records, errors:errs, next_skip:(skip+count)});

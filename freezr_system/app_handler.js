@@ -499,11 +499,11 @@ do_db_query = function (req,res, requestor, appcoll, usersWhoGrantedAppPermissio
   if (!sort) sort = {'_date_modified': -1} // default
   if (!req.body.q) req.body.q = {}
   if (req.body.q._modified_before) {
-    req.body.q._date_modified = {$lt:parseInt(req.body.q._modified_before+0)}
+    req.body.q._date_modified = {$lt:parseInt(req.body.q._modified_before)}
     delete  req.body.q._modified_before
   }
   if (req.body.q._modified_after) {
-    req.body.q._date_modified = {$gt:parseInt(req.body.q._modified_after+0)}
+    req.body.q._date_modified = {$gt:parseInt(req.body.q._modified_after)}
     delete  req.body.q._modified_after
   }
   //onsole.log("In query to find", JSON.stringify (req.body.q))
@@ -543,7 +543,6 @@ do_db_query = function (req,res, requestor, appcoll, usersWhoGrantedAppPermissio
     //onsole.log("looking at permitter ", permitter, "appcollowner", appcollowner, "req.body.q",req.body.q,sort,count,skip)
     db_handler.query(req.freezr_environment, appcollowner, req.body.q,
       {sort: sort, count:count, skip:skip}, function(err, results) {
-        //onsole.log(results)
       if (results){
         if (app_config_permission_schema) results.map(anitem => anitem._owner = permitter)
         for (record of results) {
@@ -1029,7 +1028,7 @@ exports.setObjectAccess = function (req, res) {
   var addToAccessibles =  new_shared_with_group == "public"  && !req.body.not_accessible;
   // currently added query_criteria to deal with multuple items, but "make_accessible" section only works with one object at a time - to be fixed / updated later (Todo later)
 
-  helpers.log(req,"setObjectAccess by "+req.session.logged_in_user_id+" for "+data_object_id+" query:"+ JSON.stringify(query_criteria)+" action"+JSON.stringify(req.body.action)+" perm: " +req.params.permission_name);
+  helpers.log(req,"setObjectAccess by "+req.session.logged_in_user_id+" for "+data_object_id+" addToAccessibles? "+addToAccessibles+" query:"+ JSON.stringify(query_criteria)+" action"+JSON.stringify(req.body.action)+" perm: " +req.params.permission_name);
 
   function app_err(message) {return helpers.app_data_error(exports.version, "write_record", req.params.requestor_app + "- "+message);}
 

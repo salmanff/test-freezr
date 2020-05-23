@@ -691,6 +691,7 @@ exports.update_permission_records_from_app_config = function(env_params, app_con
                                 schemad_permission.requestee_app_table,
                                 schemad_permission.permission_name,
                                 function(err, returnPerms) {
+                                  //onsole.log("schemad_permission",schemad_permission, "returnPerms[0]",returnPerms[0])
                                     if (err) {
                                         cb(helpers.internal_error ("db_handler", exports.version, "update_permission_records_from_app_config","permision query error"));
                                     } else if (!returnPerms || returnPerms.length == 0) { // create new perm: schemad_permission.permission_name for aUser
@@ -1034,7 +1035,7 @@ exports.updatePermission = function(env_params, oldPerm, action, newPerms, callb
     // Note user_id, requestor_app, requestee_app_table, permission_name Already verified to find the right record.
     // action can be null, "Accept" or "Deny"
     //
-    //onsole.log("updatePermission "+action, oldPerm, newPerms)
+    console.log("updatePermission "+action, oldPerm, newPerms)
 
     if (!oldPerm || !oldPerm._id || (action=="Accept" && !newPerms ) ) {
         callback(helpers.missing_data("permission data", "db_handler", exports.version, "updatePermission"))
@@ -1050,8 +1051,6 @@ exports.updatePermission = function(env_params, oldPerm, action, newPerms, callb
         else {newPerms.granted = false; newPerms.denied = false;} // default - error
 
         newPerms.permitter = oldPerm.permitter
-
-        //onsole.log("db handler going to update ",newPerms)
 
         exports.update (env_params, PERMISSION_APC,
           (oldPerm._id+""),  //idOrQuery,
@@ -1204,13 +1203,17 @@ exports.permission_object_from_app_config_params = function(requestor_app, app_c
 
     returnpermission.permission_name = permission_name;
     returnpermission.requestor_app = requestor_app
-    returnpermission.requestee_app_table =  app_config_perm_params.requestee_app_table || requestee_app
-    if (!returnpermission.requestee_app_table && requestee_app){
+    // old returnpermission.requestee_app_table =  app_config_perm_params.requestee_app_table || requestee_app
+    if (app_config_perm_params.requestee_app_table){
+      returnpermission.requestee_app_table =  app_config_perm_params.requestee_app_table
+    } if (!requestee_app){
       console.warn("ERROR need to define-> app_config_perm_params",app_config_perm_params)
       console.warn("ERROR -> or define requestee_app",requestee_app)
       throw new Error("need equestee_app_table || requestee_app to be defined ",)
     } else {
-      returnpermission.requestee_app_table+= (app_config_perm_params.collection_name? ("."+app_config_perm_params.collection_name):"")
+      returnpermission.requestee_app_table =  requestee_app
+      returnpermission.requestee_app_table += (app_config_perm_params.collection_name? ("."+app_config_perm_params.collection_name):"")
+
       return returnpermission;
     }
 }

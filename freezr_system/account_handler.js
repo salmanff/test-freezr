@@ -1141,27 +1141,32 @@ exports.all_app_permissions = function(req, res) {
                     permission_name = all_userAppPermissions[i].permission_name;
 
                     if (aPermission.requestor_app !=app_name) {
+                      console.warn("SNBH aPermission.requestor_app !=app_name")
                         // Other apps have requested permission - just add them
                         // Need to check changes here and granted status
                         returnPermissions.push(aPermission);
                     } else if (app_config_permissions && app_config_permissions[permission_name]) {
                         schemad_permission = db_handler.permission_object_from_app_config_params(app_name, app_config_permissions[permission_name], permission_name, app_name)
-                        if (db_handler.permissionsAreSame(aPermission,schemad_permission)) {
+                        //onsole.log('account_handler schemad_permission',schemad_permission,'aPermission',aPermission)
+                        if (db_handler.permissionsAreSame(schemad_permission,aPermission)) {
+                            app_config_permissions[permission_name].isnowlisted = true;
                             returnPermissions.push(aPermission);
                         // todo - if not the same then should at least update the old stored permission so itis in the future? to review
-                        } else if (aPermission.granted){ // permissions generated but not the same
-                            aPermission.granted = false;
-                            aPermission.outDated = true;
-                            returnPermissions.push(schemad_permission);
-                            user_permissions_changed.push(schemad_permission);
-                        } else if (aPermission.denied) { // aready denied so send the schemad_permission in case ser accepts
-                            schemad_permission.denied = true;
-                            returnPermissions.push(schemad_permission);
-                        } else { // aready marked as changed so send the schemad_permission in case ser accepts
-                            schemad_permission.denied = true;
-                            returnPermissions.push(schemad_permission);
+                        } else {
+                          if (aPermission.granted){ // permissions generated but not the same
+                              aPermission.granted = false;
+                              aPermission.outDated = true;
+                              //returnPermissions.push(schemad_permission);
+                              user_permissions_changed.push(schemad_permission);
+                          } else if (aPermission.denied) { // aready denied so send the schemad_permission in case ser accepts
+                              schemad_permission.denied = true;
+                              //returnPermissions.push(schemad_permission);
+                          } else { // aready marked as changed so send the schemad_permission in case ser accepts
+                              schemad_permission.denied = true;
+                              //returnPermissions.push(schemad_permission);
+                          }
                         }
-                        delete app_config_permissions[permission_name]; // delete from schemas so add unused ones later
+                        //delete app_config_permissions[permission_name]; // delete from schemas so add unused ones later
                     } else {
                         // permission was granted but is no longer in app_config - this should not happen very often
                         console.warn("WARNING - permission no longer exists")
@@ -1173,7 +1178,7 @@ exports.all_app_permissions = function(req, res) {
                 if (app_config_permissions) {            // AND ADD app_config_permissions has objects in it
                     var newPermission={};
                     for (var key in app_config_permissions) {
-                        if (app_config_permissions.hasOwnProperty(key)) {
+                        if (app_config_permissions.hasOwnProperty(key) && !app_config_permissions[key].isnowlisted) {
                             newPermission = db_handler.permission_object_from_app_config_params(app_name, app_config_permissions[key], key, app_name);
                             returnPermissions.push(newPermission);
                             user_permissions_to_add.push(newPermission);
@@ -1187,7 +1192,6 @@ exports.all_app_permissions = function(req, res) {
             }
         ],
         function (err) {
-          //onsole.log("get_app_permissions err:",err," get_app_permissions returnPermissions:",returnPermissions)
             if (err) {
                 helpers.send_failure(res, err,"account_handler", exports.version,"all_app_permissions");
             } else {
